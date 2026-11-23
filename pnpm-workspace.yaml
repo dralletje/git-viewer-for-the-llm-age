@@ -1,0 +1,12 @@
+packages:
+  - apps/*
+  - packages/*
+
+allowBuilds:
+  tree-sitter-javascript: false
+  tree-sitter-typescript: false
+
+catalog:
+  "@dral/tsconfig": 1.8.0
+  "@types/node": ^26.6.6
+  typescript: ^7.0.2

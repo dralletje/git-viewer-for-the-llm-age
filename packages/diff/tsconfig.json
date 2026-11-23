@@ -1,0 +1,9 @@
+{
+  "extends": ["@dral/tsconfig/modern", "@dral/tsconfig/reasonable"],
+  "include": ["src"],
+  "compilerOptions": {
+    "lib": ["ES2024"],
+    "types": ["node"],
+    "rewriteRelativeImportExtensions": false
+  }
+}

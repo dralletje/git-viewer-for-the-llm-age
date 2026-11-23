@@ -1,0 +1,26 @@
+{
+  "name": "@room/syntax",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "imports": {
+    "#/*": "./src/*"
+  },
+  "scripts": {
+    "typecheck": "tsc",
+    "test": "node --test 'src/**/*.test.ts'"
+  },
+  "dependencies": {
+    "tree-sitter-javascript": "^0.25.0",
+    "tree-sitter-typescript": "^0.23.2",
+    "web-tree-sitter": "^0.27.2"
+  },
+  "devDependencies": {
+    "@dral/toml-tests": "5.2.0",
+    "@dral/tsconfig": "catalog:",
+    "@types/node": "catalog:",
+    "typescript": "catalog:"
+  }
+}

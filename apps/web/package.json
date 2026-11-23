@@ -1,0 +1,42 @@
+{
+  "name": "@room/web",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "room": "./bin/room.ts"
+  },
+  "imports": {
+    "#/*": "./app/*"
+  },
+  "scripts": {
+    "dev": "react-router dev",
+    "build": "react-router build",
+    "start": "react-router-serve ./build/server/index.js",
+    "typecheck": "react-router typegen && tsc",
+    "test": "node --test 'app/**/*.test.ts'"
+  },
+  "dependencies": {
+    "@react-router/node": "^8.5.2",
+    "@react-router/serve": "^8.5.2",
+    "@room/diff": "workspace:*",
+    "@room/git": "workspace:*",
+    "@room/syntax": "workspace:*",
+    "isbot": "^5.2.3",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-router": "^8.5.2"
+  },
+  "devDependencies": {
+    "@dral/toml-tests": "5.2.0",
+    "@dral/tsconfig": "catalog:",
+    "@react-router/dev": "^8.5.2",
+    "@react-router/fs-routes": "^8.5.2",
+    "@tailwindcss/vite": "^4.3.5",
+    "@types/node": "catalog:",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "tailwindcss": "^4.3.5",
+    "typescript": "catalog:",
+    "vite": "^8.3.8"
+  }
+}

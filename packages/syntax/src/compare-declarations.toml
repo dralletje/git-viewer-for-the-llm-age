@@ -1,0 +1,372 @@
+# compareDeclarations: each top-level declaration, what happened to it, and
+# where its new code uses names whose code is new, different, or uses code
+# that is. `input` is the file before and after; `output` lists the
+# declarations (imports aside) in the new file's order:
+#
+#   status, label   what happened to it
+#   via             for "affected": the names from it to what changed
+#   uses            each mention of such a name, as its line with the name
+#                   in «», and that name's status
+#
+# Empty `via` and `uses` are left out.
+
+name = "compareDeclarations"
+
+[[suites]]
+name = "affected declarations"
+
+[[suites.tests]]
+name = "a function calling a changed function is affected, and so is its caller"
+input.before = """
+function parsePhone(input: string) {
+  return input.trim();
+}
+function validate(input: string) {
+  return parsePhone(input).length > 0;
+}
+export function handler(input: string) {
+  return validate(input);
+}
+"""
+input.after = """
+function parsePhone(input: string) {
+  return input.replace(/\\s/g, "");
+}
+function validate(input: string) {
+  return parsePhone(input).length > 0;
+}
+export function handler(input: string) {
+  return validate(input);
+}
+"""
+output = [
+  { status = "changed", label = "parsePhone" },
+  { status = "affected", label = "validate", via = ["parsePhone"], uses = ["5:   return «parsePhone»(input).length > 0; (changed)"] },
+  { status = "affected", label = "handler", via = ["validate", "parsePhone"], uses = ["8:   return «validate»(input); (affected)"] },
+]
+
+[[suites.tests]]
+name = "only formatting changed: nothing that uses it is affected"
+input.before = """
+const limit = { max: 3 };
+function check(count: number) {
+  return count < limit.max;
+}
+"""
+input.after = """
+const limit = {max: 3};
+function check(count: number) {
+  return count < limit.max;
+}
+"""
+output = [
+  { status = "formatting", label = "limit" },
+  { status = "unchanged", label = "check" },
+]
+
+[[suites.tests]]
+name = "a changed type changes nothing that runs: code that uses it isn't affected"
+input.before = """
+interface User {
+  name: string;
+}
+function greet(user: User) {
+  return user.name;
+}
+"""
+input.after = """
+interface User {
+  name: string;
+  phone: string;
+}
+function greet(user: User) {
+  return user.name;
+}
+"""
+output = [
+  { status = "types", label = "User", typeOnly = true },
+  { status = "unchanged", label = "greet" },
+]
+
+[[suites.tests]]
+name = "importing something else affects the code that uses it"
+input.before = """
+import { send } from "./sms.ts";
+export function notify(to: string) {
+  send(to, "hi");
+}
+"""
+input.after = """
+import { send } from "./email.ts";
+export function notify(to: string) {
+  send(to, "hi");
+}
+"""
+output = [
+  { status = "affected", label = "notify", via = ["send"], uses = ["3:   «send»(to, \"hi\"); (changed)"] },
+]
+
+[[suites.tests]]
+name = "code that uses nothing that changed stays unchanged"
+input.before = """
+const a = 1;
+const b = 2;
+const sum = () => b + 1;
+"""
+input.after = """
+const a = 10;
+const b = 2;
+const sum = () => b + 1;
+"""
+output = [
+  { status = "changed", label = "a" },
+  { status = "unchanged", label = "b" },
+  { status = "unchanged", label = "sum" },
+]
+
+[[suites]]
+name = "types don't change what runs"
+
+[[suites.tests]]
+name = "a changed parameter or return type is a types change"
+input.before = """
+export function total(items: Array<number>): number {
+  return items.length;
+}
+"""
+input.after = """
+export function total(items: ReadonlyArray<number>): number | null {
+  return items.length;
+}
+"""
+output = [{ status = "types", label = "total" }]
+
+[[suites.tests]]
+name = "casts, satisfies, non-null and type arguments are types"
+input.before = """
+const config = load() as Config;
+const port = config.port!;
+const names = new Set<string>();
+const options = { retries: 3 };
+"""
+input.after = """
+const config = load() as unknown as Settings;
+const port = config.port;
+const names = new Set<Name>();
+const options = { retries: 3 } satisfies Options;
+"""
+output = [
+  { status = "types", label = "config" },
+  { status = "types", label = "port" },
+  { status = "types", label = "names" },
+  { status = "types", label = "options" },
+]
+
+[[suites.tests]]
+name = "a type change next to a code change is a code change"
+input.before = """
+function f(a: string) {
+  return a;
+}
+"""
+input.after = """
+function f(a: number) {
+  return a + 1;
+}
+"""
+output = [{ status = "changed", label = "f" }]
+
+[[suites.tests]]
+name = "added and removed types, aliases and declares are types only"
+input.before = """
+type Old = { a: string };
+declare const injected: string;
+export const value = 1;
+"""
+input.after = """
+interface New {
+  b: string;
+}
+declare const injected: number;
+export const value = 1;
+"""
+# (A removed one stands after what stood before it; here nothing did: first.)
+output = [
+  { status = "removed", label = "Old", typeOnly = true },
+  { status = "added", label = "New", typeOnly = true },
+  { status = "types", label = "injected", typeOnly = true },
+  { status = "unchanged", label = "value" },
+]
+
+[[suites.tests]]
+name = "a type built from a changed schema isn't affected: it's a type"
+input.before = """
+const schema = z.object({ phone: z.string() });
+export type Receipt = z.infer<typeof schema>;
+export const parse = (input: unknown): Receipt => schema.parse(input);
+"""
+input.after = """
+const schema = z.object({ phone: z.string(), code: z.string() });
+export type Receipt = z.infer<typeof schema>;
+export const parse = (input: unknown): Receipt => schema.parse(input);
+"""
+output = [
+  { status = "changed", label = "schema" },
+  { status = "unchanged", label = "Receipt", typeOnly = true },
+  { status = "affected", label = "parse", via = ["schema"], uses = ["3: export const parse = (input: unknown): Receipt => «schema».parse(input); (changed)"] },
+]
+
+[[suites.tests]]
+name = "a function that uses a changed function only in a type isn't affected"
+input.before = """
+function make() {
+  return { a: 1 };
+}
+let made: ReturnType<typeof make> | null = null;
+"""
+input.after = """
+function make() {
+  return { a: 2 };
+}
+let made: ReturnType<typeof make> | null = null;
+"""
+output = [
+  { status = "changed", label = "make" },
+  { status = "unchanged", label = "made" },
+]
+
+[[suites]]
+name = "blank lines"
+
+[[suites.tests]]
+name = "adding or removing blank lines isn't a change"
+input.before = """
+function f() {
+  const a = 1;
+  return a;
+}
+"""
+input.after = """
+function f() {
+  const a = 1;
+
+  return a;
+}
+"""
+output = [{ status = "unchanged", label = "f" }]
+
+[[suites.tests]]
+name = "a blank line inside a template literal is"
+input.before = """
+const message = `hello
+world`;
+"""
+input.after = """
+const message = `hello
+
+world`;
+"""
+output = [{ status = "changed", label = "message" }]
+
+[[suites]]
+name = "uses inside changed declarations"
+
+[[suites.tests]]
+name = "a changed function's other lines show what they use that changed"
+input.before = """
+const rate = 1;
+function price(amount: number) {
+  const base = amount * rate;
+  return base;
+}
+"""
+input.after = """
+const rate = 2;
+function price(amount: number) {
+  const base = amount * rate;
+  return Math.round(base);
+}
+"""
+output = [
+  { status = "changed", label = "rate" },
+  { status = "changed", label = "price", uses = ["3:   const base = amount * «rate»; (changed)"] },
+]
+
+[[suites.tests]]
+name = "a new function used by changed code is marked as added"
+input.before = """
+function save(value: string) {
+  return value;
+}
+"""
+input.after = """
+function clean(value: string) {
+  return value.trim();
+}
+function save(value: string) {
+  return clean(value);
+}
+"""
+output = [
+  { status = "added", label = "clean" },
+  { status = "changed", label = "save", uses = ["5:   return «clean»(value); (added)"] },
+]
+
+[[suites.tests]]
+name = "every mention is marked, also several on one line"
+input.before = """
+const unit = "kg";
+const label = (a: number, b: number) => `${a}${unit} to ${b}${unit}`;
+"""
+input.after = """
+const unit = "g";
+const label = (a: number, b: number) => `${a}${unit} to ${b}${unit}`;
+"""
+output = [
+  { status = "changed", label = "unit" },
+  { status = "affected", label = "label", via = ["unit"], uses = [
+    "2: const label = (a: number, b: number) => `${a}${«unit»} to ${b}${unit}`; (changed)",
+    "2: const label = (a: number, b: number) => `${a}${unit} to ${b}${«unit»}`; (changed)",
+  ] },
+]
+
+[[suites.tests]]
+name = "a local variable with a top-level name counts as a use (it errs toward uses)"
+input.before = """
+const id = 1;
+function f() {
+  const id = 2;
+  return id;
+}
+"""
+input.after = """
+const id = 3;
+function f() {
+  const id = 2;
+  return id;
+}
+"""
+output = [
+  { status = "changed", label = "id" },
+  { status = "affected", label = "f", via = ["id"], uses = [
+    "3:   const «id» = 2; (changed)",
+    "4:   return «id»; (changed)",
+  ] },
+]
+
+[[suites]]
+name = "removed declarations"
+
+[[suites.tests]]
+name = "removed code uses nothing"
+input.before = """
+const a = 1;
+const b = () => a;
+"""
+input.after = """
+const a = 2;
+"""
+output = [
+  { status = "changed", label = "a" },
+  { status = "removed", label = "b" },
+]

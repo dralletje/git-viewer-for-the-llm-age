@@ -1,0 +1,15 @@
+export { analyzeSource } from "#/analyze.ts";
+export type { SourceAnalysis } from "#/analyze.ts";
+export { compareImports } from "#/compare-imports.ts";
+export type { ImportChange } from "#/compare-imports.ts";
+export { compareDeclarations } from "#/compare-declarations.ts";
+export type { DeclarationChange, LineRange, UsedChange } from "#/compare-declarations.ts";
+export { compareModules } from "#/compare-modules.ts";
+export type { ChangedUnit, ExportChange, ModuleChanges } from "#/compare-modules.ts";
+export type { Token } from "#/highlight.ts";
+export { compareOutlines } from "#/outline.ts";
+export type { OutlineNode, PartChange } from "#/outline.ts";
+export type { Import, ImportBinding } from "#/imports.ts";
+export { languageForPath } from "#/languages.ts";
+export type { LanguageName } from "#/languages.ts";
+export type { Export, ExportKind, TopLevel, TopLevelUnit, Use } from "#/top-level.ts";
