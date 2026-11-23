@@ -1,0 +1,218 @@
+# findCapabilities: where a file reaches outside the program itself, by a
+# module it imports or a global it uses. `input` is a TypeScript file;
+# `output` lists what it reaches, in the order of its lines:
+#
+#   "<line> <capability> <via>"
+
+name = "capabilities"
+
+[[tests]]
+name = "a file that only computes reaches nothing"
+input = """
+import { sum } from "./math.ts";
+export const total = (values: Array<number>) => sum(values) * 2;
+"""
+output = []
+
+[[tests]]
+name = "node modules, with and without node:, and their subpaths"
+input = """
+import { readFile } from "node:fs/promises";
+import { spawn } from "child_process";
+import http from "node:http";
+import vm from "vm";
+"""
+output = ["1 filesystem node:fs/promises", "2 process child_process", "3 network node:http", "4 eval vm"]
+
+[[tests]]
+name = "packages by name, scoped ones and cloud SDK scopes"
+input = """
+import { Pool } from "pg";
+import { PrismaClient } from "@prisma/client";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { S3Client } from "@aws-sdk/client-s3";
+import "dotenv/config";
+"""
+output = [
+  "1 database pg",
+  "2 database @prisma/client",
+  "3 database drizzle-orm/node-postgres",
+  "4 network @aws-sdk/client-s3",
+  "5 env dotenv/config",
+]
+
+[[tests]]
+name = "require and import() count, a type-only import doesn't"
+input = """
+import type { Pool } from "pg";
+const fs = require("fs");
+export const later = () => import("axios");
+"""
+output = ["2 filesystem fs", "3 network axios"]
+
+[[tests]]
+name = "globals: fetch, eval, new Function, WebSocket"
+input = """
+export async function load(url: string) {
+  const response = await fetch(url);
+  const run = new Function("x", "return x");
+  const socket = new WebSocket(url);
+  return eval(await response.text());
+}
+"""
+output = ["2 network fetch()", "3 eval new Function()", "4 network new WebSocket()", "5 eval eval()"]
+
+[[tests]]
+name = "fetch through globalThis or window"
+input = """
+const a = globalThis.fetch("/a");
+const b = window.fetch("/b");
+"""
+output = ["1 network fetch()"]
+
+[[tests]]
+name = "env vars: process.env, import.meta.env, Bun.env"
+input = """
+const port = process.env.PORT;
+const mode = import.meta.env.MODE;
+const key = Bun.env.KEY;
+"""
+output = ["1 env process.env", "2 env import.meta.env", "3 env Bun.env"]
+
+[[tests]]
+name = "Bun and Deno APIs"
+input = """
+await Bun.write("out.txt", "hi");
+const child = Bun.spawn(["ls"]);
+await Bun.$`ls`;
+const text = await Deno.readTextFile("a.txt");
+const command = new Deno.Command("ls");
+"""
+output = ["1 filesystem Bun.write", "2 process Bun.spawn", "3 process Bun.$", "4 filesystem Deno.readTextFile", "5 process Deno.Command"]
+
+[[tests]]
+name = "each module or global once, at its first use"
+input = """
+const a = await fetch("/a");
+const b = await fetch("/b");
+const port = process.env.PORT;
+const host = process.env.HOST;
+"""
+output = ["1 network fetch()", "3 env process.env"]
+
+[[tests]]
+name = "a local function, variable or parameter named like a global isn't the global"
+input = """
+function fetch(url: string) {
+  return cache.get(url);
+}
+const a = fetch("/a");
+
+export function run(eval: (code: string) => void) {
+  eval("x");
+}
+
+export const load = ({ process }: Deps) => process.env.PORT;
+"""
+output = []
+
+[[tests]]
+name = "a local name only hides the global inside its scope"
+input = """
+export function local() {
+  const fetch = (url: string) => url;
+  return fetch("/local");
+}
+export const remote = () => fetch("/remote");
+"""
+output = ["5 network fetch()"]
+
+[[tests]]
+name = "destructured names, catch errors, loop variables and function expression names"
+input = """
+const { fetch: get, eval: run } = tools;
+for (const fetch of fetchers) fetch();
+try {} catch (eval) { eval(); }
+const f = function fetch() { return fetch(); };
+const process = { env: {} };
+const port = process.env.PORT;
+"""
+output = []
+
+[[tests]]
+name = "a var belongs to its whole function, even from inside a block or after the use"
+input = """
+export function a(cached: boolean) {
+  if (cached) {
+    var fetch = (url: string) => url;
+  }
+  return fetch("/a");
+}
+export function b() {
+  eval("x");
+  var eval = (code: string) => code;
+}
+for (var process of processes) {}
+const port = process.env.PORT;
+"""
+output = []
+
+[[tests]]
+name = "a var doesn't reach out of its function, and let in a block stays in the block"
+input = """
+export function a() {
+  var fetch = (url: string) => url;
+}
+export function b() {
+  if (true) {
+    let eval = (code: string) => code;
+  }
+  eval("x");
+  return fetch("/b");
+}
+"""
+output = ["8 eval eval()", "9 network fetch()"]
+
+[[tests]]
+name = "a loop over an existing name doesn't declare it"
+input = """
+let fetch;
+export function a() {
+  for (fetch of fetchers) {}
+}
+for (eval of evaluators) {}
+eval("x");
+"""
+output = ["6 eval eval()"]
+
+[[tests]]
+name = "globalThis.fetch is the global even where a local fetch exists"
+input = """
+const fetch = (url: string) => url;
+export const real = () => globalThis.fetch("/real");
+"""
+output = ["2 network fetch()"]
+
+[[tests]]
+name = "an imported fetch isn't the global, but its module counts"
+input = """
+import fetch from "node-fetch";
+export const get = () => fetch("/a");
+"""
+output = ["1 network node-fetch"]
+
+[[tests]]
+name = "declare doesn't hide the global: it describes it"
+input = """
+declare function fetch(url: string): Promise<Response>;
+export const get = () => fetch("/a");
+"""
+output = ["2 network fetch()"]
+
+[[tests]]
+name = "a method called fetch on another object isn't the global"
+input = """
+const user = await repository.fetch(id);
+const value = config.env;
+"""
+output = []

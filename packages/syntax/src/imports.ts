@@ -5,6 +5,8 @@ export type ImportBinding = {
   imported: string;
   /** The name it gets here (for a re-export: the name it is exported as). */
   local: string;
+  /** `import { type A }`, `export { type A } from`: this name only, for types. */
+  typeOnly: boolean;
 };
 
 /** One place a file pulls in another module. */
@@ -61,16 +63,16 @@ export function importStatement(node: Node): Import {
       for (const part of child.namedChildren) {
         if (part === null) continue;
         if (part.type === "identifier") {
-          bindings.push({ imported: "default", local: part.text });
+          bindings.push({ imported: "default", local: part.text, typeOnly: false });
         } else if (part.type === "namespace_import") {
           const name = part.namedChildren.find((name) => name?.type === "identifier");
-          bindings.push({ imported: "*", local: name?.text ?? "*" });
+          bindings.push({ imported: "*", local: name?.text ?? "*", typeOnly: false });
         } else if (part.type === "named_imports") {
           for (const specifier of part.namedChildren) {
             if (specifier?.type !== "import_specifier") continue;
             const name = specifier.childForFieldName("name")?.text ?? "";
             const alias = specifier.childForFieldName("alias")?.text;
-            bindings.push({ imported: name, local: alias ?? name });
+            bindings.push({ imported: name, local: alias ?? name, typeOnly: specifier.children.some((token) => token?.type === "type") });
           }
         }
       }
@@ -78,7 +80,7 @@ export function importStatement(node: Node): Import {
     // TypeScript's `import fs = require("fs")`.
     if (child?.type === "import_require_clause") {
       const name = child.namedChildren.find((name) => name?.type === "identifier");
-      bindings.push({ imported: "*", local: name?.text ?? "*" });
+      bindings.push({ imported: "*", local: name?.text ?? "*", typeOnly: false });
       source = stringValue(child.childForFieldName("source"));
     }
   }
@@ -96,17 +98,17 @@ function reExport(node: Node): Import {
         if (specifier?.type !== "export_specifier") continue;
         const name = specifier.childForFieldName("name")?.text ?? "";
         const alias = specifier.childForFieldName("alias")?.text;
-        bindings.push({ imported: name, local: alias ?? name });
+        bindings.push({ imported: name, local: alias ?? name, typeOnly: specifier.children.some((token) => token?.type === "type") });
       }
     }
     // `export * as name from "x"`.
     if (child?.type === "namespace_export") {
-      bindings.push({ imported: "*", local: child.namedChildren[0]?.text ?? "*" });
+      bindings.push({ imported: "*", local: child.namedChildren[0]?.text ?? "*", typeOnly: false });
     }
   }
   // `export * from "x"`: everything, under the same names.
   if (bindings.length === 0 && node.children.some((child) => child?.type === "*")) {
-    bindings.push({ imported: "*", local: "*" });
+    bindings.push({ imported: "*", local: "*", typeOnly: false });
   }
 
   return {

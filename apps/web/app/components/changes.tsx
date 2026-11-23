@@ -4,6 +4,7 @@ import type { FileDiff, FileStatus } from "@room/diff";
 import type { ChangedUnit, ExportChange, ImportChange, UsedChange } from "@room/syntax";
 import type { AnalyzedDeclaration, AnalyzedFile, AnalyzedHunk, DeclarationRow, OutsideChange } from "#/analyze-diff.server.ts";
 import { inFileOrder } from "#/declaration-order.ts";
+import { ReachChips } from "#/components/reach.tsx";
 import { buildFileTree, filesInTreeOrder, type FileTreeNode } from "#/file-tree.ts";
 
 /** One changed file on a commit or comparison page. */
@@ -380,6 +381,7 @@ export const FileDiffView = memo(function FileDiffView({
               {file.oldMode} → {file.newMode}
             </span>
           )}
+          <ReachChips path={file.path} />
           <span className="ml-auto">
             <Counts additions={file.additions} deletions={file.deletions} />
           </span>

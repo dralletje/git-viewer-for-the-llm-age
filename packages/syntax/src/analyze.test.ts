@@ -65,14 +65,23 @@ test("highlights lines, and keeps their text exactly", async () => {
 
 test("compares imports per module", () => {
   const before = [
-    { kind: "import" as const, source: "react", typeOnly: false, bindings: [{ imported: "useState", local: "useState" }], line: 1 },
-    { kind: "import" as const, source: "lodash", typeOnly: false, bindings: [{ imported: "default", local: "_" }], line: 2 },
+    { kind: "import" as const, source: "react", typeOnly: false, bindings: [{ imported: "useState", local: "useState", typeOnly: false }], line: 1 },
+    { kind: "import" as const, source: "lodash", typeOnly: false, bindings: [{ imported: "default", local: "_", typeOnly: false }], line: 2 },
     { kind: "import" as const, source: "./a.ts", typeOnly: false, bindings: [], line: 3 },
   ];
   const after = [
     { kind: "import" as const, source: "./a.ts", typeOnly: false, bindings: [], line: 1 },
-    { kind: "import" as const, source: "react", typeOnly: false, bindings: [{ imported: "useState", local: "useState" }, { imported: "useEffect", local: "useEffect" }], line: 2 },
-    { kind: "import" as const, source: "node:fs", typeOnly: false, bindings: [{ imported: "*", local: "fs" }], line: 3 },
+    {
+      kind: "import" as const,
+      source: "react",
+      typeOnly: false,
+      bindings: [
+        { imported: "useState", local: "useState", typeOnly: false },
+        { imported: "useEffect", local: "useEffect", typeOnly: false },
+      ],
+      line: 2,
+    },
+    { kind: "import" as const, source: "node:fs", typeOnly: false, bindings: [{ imported: "*", local: "fs", typeOnly: false }], line: 3 },
   ];
 
   assert.deepEqual(

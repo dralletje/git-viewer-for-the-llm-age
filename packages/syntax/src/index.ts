@@ -1,5 +1,11 @@
 export { analyzeSource } from "#/analyze.ts";
 export type { SourceAnalysis } from "#/analyze.ts";
+export { findGlobalUses } from "#/globals.ts";
+export type { GlobalUse } from "#/globals.ts";
+export { scanSource } from "#/scan.ts";
+export type { SourceScan } from "#/scan.ts";
+export type { LocalExports } from "#/local-exports.ts";
+export type { ModuleGraph, ModuleUnit } from "#/module-graph.ts";
 export { compareImports } from "#/compare-imports.ts";
 export type { ImportChange } from "#/compare-imports.ts";
 export { compareDeclarations } from "#/compare-declarations.ts";

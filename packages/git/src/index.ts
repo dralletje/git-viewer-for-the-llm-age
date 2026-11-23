@@ -18,3 +18,5 @@ export {
 } from "#/repository.ts";
 export type { Branch, Commit, CommitWithDiff, Comparison, ContainedBranch, Repository, RepositorySource, WorkingChanges } from "#/repository.ts";
 export { GitError } from "#/run-git.ts";
+export { fetchMissingBlobs, listFiles } from "#/tree.ts";
+export type { TreeFile } from "#/tree.ts";

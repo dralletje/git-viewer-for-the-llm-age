@@ -3,6 +3,8 @@ import { data, useLocation, type ShouldRevalidateFunctionArgs } from "react-rout
 import { listCommits, openRepository, resolveCommit } from "@room/git";
 import { analyzeCommit, prefetchCommits } from "#/commit-analysis.server.ts";
 import { ChangesBody, ChangesView, FileTree, ViewTabs, type ChangeView } from "#/components/changes.tsx";
+import { ReachPanel, ReachProvider } from "#/components/reach.tsx";
+import { commitReach } from "#/reach.server.ts";
 import { commitPath, fileChangesPath, repositoryLabel, repositoryPath } from "#/paths.ts";
 import { repositoryFromParams } from "#/repository.server.ts";
 import type { Route } from "./+types/route.ts";
@@ -38,6 +40,8 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     base: repositoryPath(source),
     branch: params.branch,
     commit: commit,
+    // Not waited for: the page shows the commit, and the reach streams in when scanned.
+    reach: commitReach(repository, commit),
   };
 }
 
@@ -54,7 +58,7 @@ export function shouldRevalidate({ currentUrl, nextUrl, currentParams, nextParam
 }
 
 export default function CommitPage({ loaderData }: Route.ComponentProps) {
-  const { base, branch, commit } = loaderData;
+  const { base, branch, commit, reach } = loaderData;
   // Only the address's path and query matter here: jumping to a file (its
   // #hash) must not rebuild these, or the whole page renders again.
   const { pathname, search } = useLocation();
@@ -82,11 +86,14 @@ export default function CommitPage({ loaderData }: Route.ComponentProps) {
   ];
 
   return (
-    <ChangesView key={commit.sha} tree={<FileTree entries={entries} />}>
-      <ViewTabs current={view} tabs={tabs} />
-      <CommitHeader commit={commit} parentHref={(parent) => commitPath(base, branch, parent)} />
-      <ChangesBody entries={entries} view={view} showTypes={showTypes} typesHref={withTypes({ pathname, search }, !showTypes)} />
-    </ChangesView>
+    <ReachProvider reach={reach}>
+      <ChangesView key={commit.sha} tree={<FileTree entries={entries} />}>
+        <ViewTabs current={view} tabs={tabs} />
+        <CommitHeader commit={commit} parentHref={(parent) => commitPath(base, branch, parent)} />
+        <ReachPanel />
+        <ChangesBody entries={entries} view={view} showTypes={showTypes} typesHref={withTypes({ pathname, search }, !showTypes)} />
+      </ChangesView>
+    </ReachProvider>
   );
 }
 
