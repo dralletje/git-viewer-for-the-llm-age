@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import type { Capability } from "#/capabilities.ts";
 import type { ReachStep } from "#/reach.ts";
-import type { CommitReach, ReachGroup } from "#/reach.server.ts";
+import type { CommitReach, MarkedStep, ReachGroup } from "#/reach.server.ts";
 
 /**
  * The commit's reach, for the file headers to show: null while it's being
@@ -126,12 +126,14 @@ export function ReachPanel() {
   }
   return (
     <section className="mt-4 rounded-md border border-amber-300 dark:border-amber-800">
-      <h3 className="border-b border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-950 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100">
-        New reach
-        <span className="ml-2 text-xs font-normal text-amber-800 dark:text-amber-300">
-          files that can now reach outside the program, of {reach.scanned} scanned
-        </span>
-      </h3>
+      <div className="border-b border-amber-300 bg-amber-50 px-3 py-1.5 dark:border-amber-800 dark:bg-amber-950">
+        <h3 className="text-sm font-medium text-amber-950 dark:text-amber-100">New reach</h3>
+        <p className="text-xs text-amber-900 dark:text-amber-200">
+          After this commit, these files can use something outside the program they couldn't before. Each row is one line of code that touches the
+          outside: read it first. When it isn't new, the commit added an import that leads to it: that's the line to read. Open a row to see every
+          file it reaches, and how; what this commit added is marked. {reach.scanned} source files scanned.
+        </p>
+      </div>
       <ul className="divide-y divide-neutral-200 text-sm dark:divide-neutral-800">
         {reach.gained.map((group) => (
           <ReachGroupRow key={`${group.capability}\0${group.origin.path}\0${group.origin.via}`} group={group} />
@@ -154,7 +156,24 @@ function ReachGroupRow({ group }: { group: ReachGroup }) {
           <code className="text-xs">{group.origin.via}</code>
           <span className="text-xs text-neutral-500">
             in <span className="font-mono">{group.origin.path}:{group.origin.line}</span>
-            {group.originIsNew ? ", new in this commit" : ", reached through a new import"}
+            {group.origin.isNew ? (
+              <>, new in this commit</>
+            ) : group.newImports.length > 0 ? (
+              <>
+                , already there; newly reached through{" "}
+                {group.newImports.map((step, index) => (
+                  <span key={`${step.path}:${step.line}`}>
+                    {index > 0 && ", "}
+                    <span className="font-mono text-amber-900 dark:text-amber-200">
+                      {step.path}:{step.line}
+                    </span>{" "}
+                    (imports {step.name ?? step.via})
+                  </span>
+                ))}
+              </>
+            ) : (
+              <>, already there and imported; changed code now uses it</>
+            )}
           </span>
           <span className="ml-auto text-xs text-neutral-500">
             {group.count} {group.count === 1 ? "file" : "files"}
@@ -178,16 +197,24 @@ function ReachGroupRow({ group }: { group: ReachGroup }) {
   );
 }
 
-/** `a.ts:3 → b.ts:1 → pg`: each file, and the line whose import leads on. */
-function Chain({ chain }: { chain: Array<ReachStep> }) {
+/**
+ * `a.ts:3 parse → b.ts:1 readFile → node:fs`: each file, the line whose
+ * import leads on, and the name it imports. What the commit added is marked.
+ */
+function Chain({ chain }: { chain: Array<MarkedStep> }) {
   const last = chain[chain.length - 1];
   return (
     <span>
-      {chain.map((step) => (
-        <span key={step.path}>
-          <span className={step === chain[0] ? "text-neutral-900 dark:text-neutral-100" : "text-neutral-500"}>{step.path}</span>
-          <span className="text-neutral-400">:{step.line}</span>
-          {step.name !== null && <span className="pl-1 text-neutral-600 dark:text-neutral-300">{step.name}</span>}
+      {chain.map((step, index) => (
+        <span key={`${step.path}:${step.line}`}>
+          <span
+            title={step.isNew ? "Added in this commit" : undefined}
+            className={step.isNew ? "rounded bg-amber-100 px-0.5 dark:bg-amber-900" : undefined}
+          >
+            <span className={index === 0 ? "text-neutral-900 dark:text-neutral-100" : "text-neutral-500"}>{step.path}</span>
+            <span className="text-neutral-400">:{step.line}</span>
+            {step.name !== null && <span className="pl-1 text-neutral-600 dark:text-neutral-300">{step.name}</span>}
+          </span>
           <span className="px-1 text-neutral-400">→</span>
         </span>
       ))}

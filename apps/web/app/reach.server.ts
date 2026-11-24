@@ -1,6 +1,6 @@
 import { fetchMissingBlobs, listFiles, readBlobs, type Repository } from "@room/git";
 import { languageForPath, scanSource, type SourceScan } from "@room/syntax";
-import { allCapabilities, type Capability } from "#/capabilities.ts";
+import { allCapabilities, directCapabilities, type Capability } from "#/capabilities.ts";
 import { computeReach, createResolver, type ReachStep, type RepositoryReach, type ScannedFile } from "#/reach.ts";
 import { ignoredBy } from "#/rules.server.ts";
 
@@ -18,7 +18,7 @@ export type CommitReach =
       /** How many source files the commit's tree has. */
       scanned: number;
       /** Each changed file's reach after the commit (none: it reaches nothing), and whether it's new. */
-      files: Record<string, Array<{ capability: Capability; isNew: boolean; chain: Array<ReachStep> }>>;
+      files: Record<string, Array<{ capability: Capability; isNew: boolean; chain: Array<MarkedStep> }>>;
       /**
        * Files that reach a capability they didn't before, in any file of
        * the repository, grouped by what gives it to them: the module or
@@ -31,14 +31,25 @@ export type CommitReach =
   | { status: "too-large"; sourceFiles: number }
   | { status: "failed"; message: string };
 
+/**
+ * A step of a chain, and whether the commit added it: an import (of that
+ * name) the file didn't have before, or a module or global it didn't use.
+ * In a file the commit added, every step is new.
+ */
+export type MarkedStep = ReachStep & { isNew: boolean };
+
 export type ReachGroup = {
   capability: Capability;
   /** The last step: the file that reaches it itself, and the module or global. */
-  origin: ReachStep;
-  /** That file didn't reach it itself before: the commit added the import or the global. */
-  originIsNew: boolean;
+  origin: MarkedStep;
+  /**
+   * The imports the commit added on the way, in any of the files' chains:
+   * what to read when the origin itself isn't new. None, with an old
+   * origin: code that was there now uses an import that was there.
+   */
+  newImports: Array<ReachStep>;
   /** The files that gained it this way, the origin's own file first, each with its chain; at most `maxListed`. */
-  files: Array<{ path: string; chain: Array<ReachStep> }>;
+  files: Array<{ path: string; chain: Array<MarkedStep> }>;
   /** How many there are in all. */
   count: number;
 };
@@ -57,13 +68,28 @@ export async function commitReach(repository: Repository, commit: { sha: string;
     const beforeReach = before?.reach ?? new Map();
     const reaches = (path: string, capability: Capability, reach: RepositoryReach) => reach.get(path)?.has(capability) ?? false;
 
+    /** Whether the parent had this step: the import (of that name), or the module or global it ends at. */
+    const isNewStep = (step: ReachStep): boolean => {
+      const previous = before?.files.get(step.path);
+      if (previous === undefined) return true;
+      const imported = previous.imports.some(
+        (entry) =>
+          entry.source === step.via &&
+          !entry.typeOnly &&
+          (step.name === null || entry.bindings.some((binding) => binding.imported === step.name && !binding.typeOnly)),
+      );
+      if (imported) return false;
+      return !directCapabilities(previous.imports, previous.globals).some((direct) => direct.via === step.via);
+    };
+    const mark = (chain: Array<ReachStep>): Array<MarkedStep> => chain.map((step) => ({ ...step, isNew: isNewStep(step) }));
+
     const files: Extract<CommitReach, { status: "scanned" }>["files"] = {};
     for (const { path } of commit.files) {
       const theirs = after.reach.get(path);
       if (theirs === undefined) continue;
       files[path] = allCapabilities
         .filter((capability) => theirs.has(capability))
-        .map((capability) => ({ capability, isNew: !reaches(path, capability, beforeReach), chain: theirs.get(capability) ?? [] }));
+        .map((capability) => ({ capability, isNew: !reaches(path, capability, beforeReach), chain: mark(theirs.get(capability) ?? []) }));
     }
 
     const groups = new Map<string, ReachGroup>();
@@ -71,17 +97,17 @@ export async function commitReach(repository: Repository, commit: { sha: string;
       if (ignoredBy([path]) !== null) continue;
       for (const [capability, chain] of theirs) {
         if (reaches(path, capability, beforeReach)) continue;
-        const origin = chain[chain.length - 1];
+        const marked = mark(chain);
+        const origin = marked[marked.length - 1];
         if (origin === undefined) continue;
         const key = `${capability}\0${origin.path}\0${origin.via}`;
-        const group = groups.get(key) ?? {
-          capability,
-          origin,
-          originIsNew: !(beforeReach.get(origin.path)?.get(capability)?.length === 1),
-          files: [],
-          count: 0,
-        };
-        group.files.push({ path, chain });
+        const group = groups.get(key) ?? { capability, origin, newImports: [], files: [], count: 0 };
+        for (const step of marked.slice(0, -1)) {
+          if (step.isNew && !group.newImports.some((known) => known.path === step.path && known.line === step.line)) {
+            group.newImports.push({ path: step.path, line: step.line, via: step.via, name: step.name });
+          }
+        }
+        group.files.push({ path, chain: marked });
         group.count++;
         groups.set(key, group);
       }
@@ -89,6 +115,7 @@ export async function commitReach(repository: Repository, commit: { sha: string;
     const gained = [...groups.values()]
       .map((group) => ({
         ...group,
+        newImports: group.newImports.slice(0, 5),
         // The origin's own file first, then the nearest files: shortest chains first.
         files: group.files.sort((a, b) => a.chain.length - b.chain.length || a.path.localeCompare(b.path)).slice(0, maxListed),
       }))
@@ -107,7 +134,9 @@ export async function commitReach(repository: Repository, commit: { sha: string;
   }
 }
 
-type RepositoryScan = { status: "scanned"; sourceFiles: number; reach: RepositoryReach } | { status: "too-large"; sourceFiles: number };
+type RepositoryScan =
+  | { status: "scanned"; sourceFiles: number; files: Map<string, ScannedFile>; reach: RepositoryReach }
+  | { status: "too-large"; sourceFiles: number };
 
 /** Scans of whole commits, the last 10: the commit page scans a commit and its parent, and the next commit down shares one. */
 const scans = new Map<string, Promise<RepositoryScan>>();
@@ -156,7 +185,12 @@ function scanRepository(repository: Repository, sha: string): Promise<Repository
       tree.map((file) => file.path),
       configs,
     );
-    return { status: "scanned", sourceFiles: sources.length, reach: computeReach(scanned, resolve) };
+    return {
+      status: "scanned",
+      sourceFiles: sources.length,
+      files: new Map(scanned.map((file) => [file.path, file])),
+      reach: computeReach(scanned, resolve),
+    };
   })();
 
   remember(scans, key, result, 10);

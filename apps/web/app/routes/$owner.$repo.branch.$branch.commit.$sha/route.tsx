@@ -74,13 +74,14 @@ export default function CommitPage({ loaderData }: Route.ComponentProps) {
     [base, commit, pathname, search],
   );
 
-  // Which way to show the changes (?view=), declarations unless asked.
+  // Which way to show the changes (?view=), reach unless asked.
   const asked = new URLSearchParams(search).get("view");
-  const view: ChangeView = asked === "lines" || asked === "module" ? asked : "declarations";
+  const view: ChangeView = asked === "declarations" || asked === "lines" || asked === "module" ? asked : "reach";
   // Changes to types only are hidden unless asked for (?types=show): they don't change what runs.
   const showTypes = new URLSearchParams(search).get("types") === "show";
   const tabs = [
-    { view: "declarations" as const, label: "Declarations", href: withView({ pathname, search }, "declarations") },
+    { view: "reach" as const, label: "Reach", href: withView({ pathname, search }, "reach") },
+    { view: "declarations" as const, label: "Full declarations that changed", href: withView({ pathname, search }, "declarations") },
     { view: "lines" as const, label: "Line diff", href: withView({ pathname, search }, "lines") },
     { view: "module" as const, label: "Imports & exports", href: withView({ pathname, search }, "module") },
   ];
@@ -90,7 +91,7 @@ export default function CommitPage({ loaderData }: Route.ComponentProps) {
       <ChangesView key={commit.sha} tree={<FileTree entries={entries} />}>
         <ViewTabs current={view} tabs={tabs} />
         <CommitHeader commit={commit} parentHref={(parent) => commitPath(base, branch, parent)} />
-        <ReachPanel />
+        {view === "reach" && <ReachPanel />}
         <ChangesBody entries={entries} view={view} showTypes={showTypes} typesHref={withTypes({ pathname, search }, !showTypes)} />
       </ChangesView>
     </ReachProvider>
@@ -105,10 +106,10 @@ function withTypes(location: { pathname: string; search: string }, show: boolean
   return query.size === 0 ? location.pathname : `${location.pathname}?${query}`;
 }
 
-/** This page in another view: declarations is the default, so it isn't in the address. */
+/** This page in another view: reach is the default, so it isn't in the address. */
 function withView(location: { pathname: string; search: string }, view: ChangeView): string {
   const query = new URLSearchParams(location.search);
-  if (view === "declarations") query.delete("view");
+  if (view === "reach") query.delete("view");
   else query.set("view", view);
   return query.size === 0 ? location.pathname : `${location.pathname}?${query}`;
 }

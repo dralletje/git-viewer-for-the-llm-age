@@ -25,8 +25,11 @@ export type ChangeEntry = {
  *   whose code is the same but uses code that changed.
  * - lines: the plain line diff.
  * - module: the line diff, with each file's imports and exports summed up.
+ * - reach: declarations, with what the repository's files can reach outside
+ *   the program (network, database, ...): what the commit adds, and each
+ *   file's reach beside its name. The commit page only.
  */
-export type ChangeView = "declarations" | "lines" | "module";
+export type ChangeView = "declarations" | "lines" | "module" | "reach";
 
 /** The tabs: links to this page in another view (`?view=`), so a view can be shared and reloaded. */
 export function ViewTabs({
@@ -381,12 +384,12 @@ export const FileDiffView = memo(function FileDiffView({
               {file.oldMode} → {file.newMode}
             </span>
           )}
-          <ReachChips path={file.path} />
+          {view === "reach" && <ReachChips path={file.path} />}
           <span className="ml-auto">
             <Counts additions={file.additions} deletions={file.deletions} />
           </span>
         </div>
-        {view === "declarations" && file.declarations !== null && (
+        {(view === "declarations" || view === "reach") && file.declarations !== null && (
           <div className="mt-2 flex gap-2 group-open:hidden">
             <span className="w-14 shrink-0 pt-0.5 text-xs text-neutral-500">changed</span>
             <DeclarationChips declarations={file.declarations.filter((declaration) => showTypes || !onlyTypes(declaration))} />
@@ -430,7 +433,7 @@ export const FileDiffView = memo(function FileDiffView({
         </p>
       ) : file.hunks.length === 0 ? (
         <p className="px-4 py-3 text-sm text-neutral-500">No changes to the contents.</p>
-      ) : view === "declarations" && file.declarations !== null ? (
+      ) : (view === "declarations" || view === "reach") && file.declarations !== null ? (
         <DeclarationsView file={file} declarations={file.declarations} showTypes={showTypes} typesHref={typesHref} />
       ) : (
         <div className="overflow-x-auto">
