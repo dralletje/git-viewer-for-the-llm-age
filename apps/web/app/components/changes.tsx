@@ -4,7 +4,6 @@ import type { FileDiff, FileStatus } from "@room/diff";
 import type { ChangedUnit, ExportChange, ImportChange, UsedChange } from "@room/syntax";
 import type { AnalyzedDeclaration, AnalyzedFile, AnalyzedHunk, DeclarationRow, OutsideChange } from "#/analyze-diff.server.ts";
 import { inFileOrder } from "#/declaration-order.ts";
-import { MiniGraph } from "#/components/graphs.tsx";
 import { ReachChips } from "#/components/reach.tsx";
 import { nothingRuns } from "#/graphs.ts";
 import { buildFileTree, filesInTreeOrder, type FileTreeNode } from "#/file-tree.ts";
@@ -30,21 +29,13 @@ export type ChangeEntry = {
  * - reach: declarations, with what the repository's files can reach outside
  *   the program (network, database, ...): what the commit adds, and each
  *   file's reach beside its name.
- * - combined ("Ripple"), flow: a graph of declarations above the
- *   declarations (see graphs.ts): what the changes spread to through the
- *   repository and the uses they added or removed, in a box per app or
- *   package; the chains to new reach.
- * - folded, bundled, zoom: combined, three more ways to read a big ripple
- *   without leaving anything out: far files folded, one line per file,
- *   detail by zoom. Every one of them (combined too) focuses a clicked
- *   declaration: all but the paths through it fade.
- * - neighbors: declarations, each header a small graph of what it uses that
- *   changed and what uses it.
- * - calls: what the changed code uses, which may now be called differently.
- * - points: what matters in the repository (its `.room.toml`, then the
- *   capabilities), and the changed code that reaches each.
+ * - combined ("Ripple"): a graph of declarations above the declarations
+ *   (see graphs.ts): what the changes spread to through the repository and
+ *   the uses they added or removed, in a box per file in a box per app or
+ *   package. A clicked declaration is focused: all but its paths fade.
+ * - flat ("Ripple, no file boxes"): the same, with only the apps' boxes.
  */
-export type ChangeView = "declarations" | "lines" | "module" | "reach" | "combined" | "folded" | "bundled" | "zoom" | "flow" | "neighbors" | "calls" | "points";
+export type ChangeView = "declarations" | "lines" | "module" | "reach" | "combined" | "flat";
 
 /** The views that show each file as its declarations. */
 function byDeclarations(view: ChangeView): boolean {
@@ -543,10 +534,9 @@ export const FileDiffView = memo(function FileDiffView({ entry, view }: { entry:
           file={file}
           declarations={file.declarations}
           // Ripple + import map is read declaration by declaration from the graph: all open.
-          openAll={view === "combined" || view === "folded" || view === "bundled" || view === "zoom"}
+          openAll={view === "combined" || view === "flat"}
           // The other views are read for what the code does: no list of what didn't change.
           listUnchanged={view === "declarations"}
-          neighbors={view === "neighbors"}
         />
       ) : (
         <div className="overflow-x-auto">
@@ -595,9 +585,8 @@ function DeclarationChips({ declarations }: { declarations: Array<AnalyzedDeclar
  * changed; opened, its whole code old beside new. Only what runs counts:
  * ones whose change is only to types, comments or formatting aren't shown,
  * nor comments outside the declarations. With `listUnchanged`, the
- * unchanged ones are named on one line. With `neighbors`, each header is a
- * small graph: what it uses that changed, it, and what uses it. With
- * `openAll`, every declaration starts open. Each declaration's id is
+ * unchanged ones are named on one line. With `openAll`, every declaration
+ * starts open. Each declaration's id is
  * `<file's id>--<its name>`: a graph's node links there.
  */
 function DeclarationsView({
@@ -605,14 +594,12 @@ function DeclarationsView({
   file,
   declarations,
   listUnchanged,
-  neighbors,
   openAll,
 }: {
   fileId: string;
   file: AnalyzedFile;
   declarations: Array<AnalyzedDeclaration>;
   listUnchanged: boolean;
-  neighbors: boolean;
   openAll: boolean;
 }) {
   const unchanged = declarations.filter((declaration) => declaration.status === "unchanged");
@@ -649,16 +636,10 @@ function DeclarationsView({
             <summary className="flex cursor-pointer list-none gap-2 px-4 py-3 text-xs hover:bg-neutral-50 dark:hover:bg-neutral-900/60">
               <span className="w-3 shrink-0 select-none pt-0.5 text-neutral-400 transition-transform group-open/declaration:rotate-90">▸</span>
               <span className="min-w-0 flex-1">
-                {neighbors ? (
-                  <MiniGraph file={file} declaration={item.declaration} title={<DeclarationTitle declaration={item.declaration} />} />
-                ) : (
-                  <>
-                    <span className="block">
-                      <DeclarationTitle declaration={item.declaration} />
-                    </span>
-                    <DeclarationSummary declaration={item.declaration} />
-                  </>
-                )}
+                <span className="block">
+                  <DeclarationTitle declaration={item.declaration} />
+                </span>
+                <DeclarationSummary declaration={item.declaration} />
               </span>
             </summary>
             <DeclarationRows rows={item.declaration.rows ?? []} sides={sidesOf(item.declaration)} tokenKinds={file.tokenKinds} />

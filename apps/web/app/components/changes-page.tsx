@@ -66,20 +66,13 @@ export function ChangesPage({
     asked === "lines" ||
     asked === "module" ||
     asked === "combined" ||
-    asked === "folded" ||
-    asked === "bundled" ||
-    asked === "zoom" ||
-    asked === "flow" ||
-    asked === "neighbors" ||
-    asked === "calls" ||
-    asked === "points"
+    asked === "flat"
       ? asked
       : "reach";
-  // Ripple + import map, and its four ways for big ripples: the graph stays
-  // in the top of the code while the files scroll below it, so a node
-  // clicked shows its code under the graph (see GraphFrame's `fill`).
-  const stickyGraph = view === "combined" || view === "folded" || view === "bundled" || view === "zoom";
-  const graph = stickyGraph || view === "flow" || view === "calls" || view === "points";
+  // Ripple, with or without file boxes: the graph stays in the top of the
+  // code while the files scroll below it, so a node clicked shows its code
+  // under the graph (see GraphFrame).
+  const graph = view === "combined" || view === "flat";
   // The views that show declarations are about what runs: a file where only
   // types, comments or formatting changed isn't on them, nor in their tree.
   // The line diff and imports & exports show every file.
@@ -96,24 +89,17 @@ export function ChangesPage({
     { view: "lines" as const, label: "Line diff", href: withView({ pathname, search }, "lines") },
     { view: "module" as const, label: "Imports & exports", href: withView({ pathname, search }, "module") },
     { view: "combined" as const, label: "Ripple", href: withView({ pathname, search }, "combined"), experimental: true },
-    // More ways to read a big ripple, to try: each Ripple + import map with one change (focus on click is in all).
-    { view: "folded" as const, label: "Ripple: far files folded", href: withView({ pathname, search }, "folded"), experimental: true },
-    { view: "bundled" as const, label: "Ripple: one line per file", href: withView({ pathname, search }, "bundled"), experimental: true },
-    { view: "zoom" as const, label: "Ripple: detail by zoom", href: withView({ pathname, search }, "zoom"), experimental: true },
-    { view: "flow" as const, label: "Reach flow", href: withView({ pathname, search }, "flow"), experimental: true },
-    { view: "neighbors" as const, label: "Neighbors", href: withView({ pathname, search }, "neighbors"), experimental: true },
-    { view: "calls" as const, label: "Calls", href: withView({ pathname, search }, "calls"), experimental: true },
-    { view: "points" as const, label: "Points", href: withView({ pathname, search }, "points"), experimental: true },
+    { view: "flat" as const, label: "Ripple, no file boxes", href: withView({ pathname, search }, "flat"), experimental: true },
   ];
 
   return (
     <ReachProvider href={reachHref}>
-      <GraphProvider href={graphHref} enabled={graph || view === "neighbors"}>
+      <GraphProvider href={graphHref} enabled={graph}>
         <ChangesView key={pageKey} tree={<FileTree entries={shown} />}>
           {header}
           <ViewTabs current={view} tabs={tabs} />
           {view === "reach" && <ReachPanel />}
-          {graph && <GraphPanel view={view} files={graphFiles} fill={stickyGraph} pageTitle={title} />}
+          {graph && <GraphPanel view={view} files={graphFiles} pageTitle={title} />}
           <ChangesBody entries={shown} view={view} />
         </ChangesView>
       </GraphProvider>

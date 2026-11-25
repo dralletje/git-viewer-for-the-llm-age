@@ -37,39 +37,6 @@ export type GraphDeclaration = {
  */
 export type Target = { key: string; label: string; kind: "point" | "capability"; about: string | null };
 
-/** Declarations that newly reach a target, the same way: through `origin`. */
-export type ReachFlow = {
-  target: string;
-  /** The package or global that gives it, or the declaration of the point. */
-  origin: string;
-  /**
-   * Some of them, each as its chain of declarations to the origin (the
-   * origin itself left out); `isNew`: the step to the next one (or to the
-   * origin) wasn't there before.
-   */
-  chains: Array<Array<{ id: string; isNew: boolean }>>;
-  count: number;
-};
-
-/** Something the changed code calls (uses): it may be called differently now. */
-export type CallGroup = {
-  /** A package, a global, or a declaration that didn't change itself. */
-  callee: string;
-  /** The targets it is or reaches (keys), points first. */
-  reaches: Array<string>;
-  /** The changed or affected declarations that call it, each with the declarations from the change to it (none: it changed itself). */
-  callers: Array<{ id: string; through: Array<string> }>;
-  count: number;
-};
-
-/** A target, and the changed or affected declarations that reach it. */
-export type TargetReach = {
-  target: string;
-  /** Each with the declarations from it to the origin, the origin last (a point's declaration, or the package or global); none: it's one of the point's own. */
-  reachedBy: Array<{ id: string; chain: Array<string> }>;
-  count: number;
-};
-
 export type ChangesGraph =
   | {
       status: "scanned";
@@ -83,18 +50,12 @@ export type ChangesGraph =
       ripple: { edges: Array<{ from: string; to: string }>; affected: number; shown: number };
       /** Uses across files (and of packages) that a change added or removed, and the ones between two changed declarations. */
       links: Array<{ from: string; to: string; status: "added" | "removed" | "kept" }>;
-      reach: Array<ReachFlow>;
-      calls: Array<CallGroup>;
-      /** Every point, then the capabilities the changes reach: what reaches each. */
-      points: Array<TargetReach>;
       /**
        * For each declaration in `declarations`: the points it reaches, each
        * with the next declaration on the way (null: it's the point's own,
        * or uses a package the point names) and the whole way, the origin last.
        */
       pointReach: Record<string, Array<{ target: string; next: string | null; way: Array<string> }>>;
-      /** For each changed declaration: what uses it (at most 12). */
-      users: Record<string, Array<string>>;
       /** The repository's packages (each folder with a package.json, "" the root), for a box per app or package. */
       packages: Array<{ dir: string; name: string | null }>;
     }
@@ -170,7 +131,6 @@ export async function changesGraph(repository: Repository, change: { head: strin
     const seeds = [...status.keys()].filter((id) => !setAside(id));
 
     // The ripple: from what changed to what uses it, nearest first.
-    const previous = new Map<string, string>();
     const distance = new Map<string, number>(seeds.map((id) => [id, 0]));
     const queue = [...seeds];
     for (let next = 0; next < queue.length; next++) {
@@ -178,7 +138,6 @@ export async function changesGraph(repository: Repository, change: { head: strin
       for (const user of now.usedBy.get(id) ?? []) {
         if (distance.has(user) || setAside(user)) continue;
         distance.set(user, (distance.get(id) ?? 0) + 1);
-        previous.set(user, id);
         queue.push(user);
       }
     }
@@ -188,13 +147,6 @@ export async function changesGraph(repository: Repository, change: { head: strin
     for (const id of shown) {
       for (const used of now.uses.get(id) ?? []) if (shown.has(used)) rippleEdges.push({ from: used, to: id });
     }
-    /** The declarations from the change to this one, the change first, this one left out. */
-    const through = (id: string): Array<string> => {
-      const path: Array<string> = [];
-      for (let step = previous.get(id); step !== undefined; step = previous.get(step)) path.unshift(step);
-      return path;
-    };
-
     // Uses across files (and of packages) that the change added or removed.
     const crossing = (graph: DeclarationGraph, id: string): Array<string> => {
       const path = graph.declarations.get(id)?.path;
@@ -234,23 +186,7 @@ export async function changesGraph(repository: Repository, change: { head: strin
     for (const point of points) targets[`point:${point.name}`] = { key: `point:${point.name}`, label: point.name, kind: "point", about: point.about };
     for (const capability of allCapabilities) targets[`capability:${capability}`] = { key: `capability:${capability}`, label: capability, kind: "capability", about: null };
     const reachNow = reachOf(now, points);
-    const reachThen = then === null ? null : reachOf(then, points);
-    const order = (key: string) => Object.keys(targets).indexOf(key);
 
-    // New reach: declarations that reach a target now and didn't before.
-    const flows = new Map<string, { target: string; origin: string; ids: Array<string> }>();
-    for (const [id, theirs] of reachNow) {
-      if (setAside(id)) continue;
-      // A declaration that's new without being a change (moved, renamed in an unchanged file) can't gain reach.
-      if (then !== null && !then.declarations.has(id) && !status.has(id)) continue;
-      for (const [target, how] of theirs) {
-        if (reachThen?.get(id)?.has(target) === true) continue;
-        const key = `${target}\0${how.origin}`;
-        const flow = flows.get(key) ?? { target, origin: how.origin, ids: [] };
-        flow.ids.push(id);
-        flows.set(key, flow);
-      }
-    }
     /** From a declaration to its target's origin, the origin left out. */
     const chainOf = (id: string, target: string): Array<{ id: string; isNew: boolean }> => {
       const chain: Array<{ id: string; isNew: boolean }> = [];
@@ -263,83 +199,6 @@ export async function changesGraph(repository: Repository, change: { head: strin
       }
       return chain;
     };
-    const reach: Array<ReachFlow> = [...flows.values()]
-      .map((flow) => {
-        // The changed declarations first, then the nearest.
-        const ordered = flow.ids
-          .map((id) => ({ id, chain: chainOf(id, flow.target) }))
-          .sort((a, b) => Number(status.has(b.id)) - Number(status.has(a.id)) || a.chain.length - b.chain.length || a.id.localeCompare(b.id));
-        return { target: flow.target, origin: flow.origin, chains: ordered.slice(0, 6).map((entry) => entry.chain), count: flow.ids.length };
-      })
-      .sort((a, b) => order(a.target) - order(b.target) || b.count - a.count);
-
-    // Each target, and the changed or affected declarations that reach it.
-    const reachers = new Map<string, Array<{ id: string; chain: Array<string> }>>();
-    for (const id of queue) {
-      for (const [target, how] of reachNow.get(id) ?? []) {
-        const list = reachers.get(target) ?? [];
-        // A point's own declaration: no way there, it's in it.
-        list.push({ id, chain: how.origin === id ? [] : [...chainOf(id, target).slice(1).map((step) => step.id), how.origin] });
-        reachers.set(target, list);
-      }
-    }
-    const pointsReached: Array<TargetReach> = Object.keys(targets)
-      .filter((key) => targets[key]?.kind === "point" || reachers.has(key))
-      .map((key) => {
-        const list = (reachers.get(key) ?? []).sort(
-          (a, b) => Number(status.has(b.id)) - Number(status.has(a.id)) || a.chain.length - b.chain.length || a.id.localeCompare(b.id),
-        );
-        return { target: key, reachedBy: list.slice(0, 12), count: list.length };
-      });
-
-    // Calls: what the changed and affected code uses, which may now be called
-    // differently. Outside the code: by any of them. A declaration of the
-    // code that didn't change itself: by a changed or new one.
-    const callers = new Set(queue);
-    const groups = new Map<string, Array<{ id: string; through: Array<string> }>>();
-    const addCall = (callee: string, caller: string) => {
-      const list = groups.get(callee) ?? [];
-      list.push({ id: caller, through: through(caller) });
-      groups.set(callee, list);
-    };
-    for (const caller of queue) {
-      for (const outside of now.outside.get(caller)?.keys() ?? []) addCall(outside, caller);
-      const own = status.get(caller);
-      if (own === "changed" || own === "added") {
-        for (const used of now.uses.get(caller) ?? []) if (!callers.has(used) && !setAside(used)) addCall(used, caller);
-      }
-    }
-    const outsideTag = (id: string): string | null => {
-      for (const outside of now.outside.values()) {
-        const found = outside.get(id);
-        if (found !== undefined) return tagOfOutside(found.id, found.capability, points);
-      }
-      return null;
-    };
-    const reachesOf = (callee: string): Array<string> => {
-      if (callee.startsWith("outside\0")) {
-        const tag = outsideTag(callee);
-        return tag === null ? [] : [tag];
-      }
-      return [...(reachNow.get(callee)?.keys() ?? [])].sort((a, b) => order(a) - order(b));
-    };
-    const rank = (group: CallGroup) => {
-      const first = group.reaches[0];
-      if (first !== undefined) return order(first);
-      return Object.keys(targets).length + (group.callee.startsWith("outside\0") ? 0 : 1);
-    };
-    const calls: Array<CallGroup> = [...groups.entries()]
-      .map(([callee, list]) => ({
-        callee,
-        reaches: reachesOf(callee),
-        callers: list.sort((a, b) => a.through.length - b.through.length).slice(0, 10),
-        count: list.length,
-      }))
-      .sort((a, b) => rank(a) - rank(b) || b.count - a.count);
-
-    // What uses each changed declaration.
-    const users: Record<string, Array<string>> = {};
-    for (const id of seeds) users[id] = [...(now.usedBy.get(id) ?? [])].filter((user) => !setAside(user)).slice(0, 12);
 
     // Every declaration mentioned, as the page shows it.
     const declarations: Record<string, GraphDeclaration> = {};
@@ -368,16 +227,6 @@ export async function changesGraph(repository: Repository, change: { head: strin
     for (const id of seeds) describe(id);
     for (const edge of rippleEdges) [edge.from, edge.to].forEach(describe);
     for (const link of links) [link.from, link.to].forEach(describe);
-    for (const flow of reach) {
-      describe(flow.origin);
-      for (const chain of flow.chains) for (const step of chain) describe(step.id);
-    }
-    for (const group of calls) {
-      describe(group.callee);
-      for (const caller of group.callers) [caller.id, ...caller.through].forEach(describe);
-    }
-    for (const entry of pointsReached) for (const reacher of entry.reachedBy) [reacher.id, ...reacher.chain].forEach(describe);
-    for (const list of Object.values(users)) list.forEach(describe);
 
     // The points each one reaches, for the graphs to draw.
     const pointReach: Record<string, Array<{ target: string; next: string | null; way: Array<string> }>> = {};
@@ -401,11 +250,7 @@ export async function changesGraph(repository: Repository, change: { head: strin
       seeds,
       ripple: { edges: rippleEdges, affected: reached.length, shown: Math.min(reached.length, maxRipple) },
       links,
-      reach,
-      calls,
-      points: pointsReached,
       pointReach,
-      users,
       packages: after.packages,
     };
   } catch (error) {

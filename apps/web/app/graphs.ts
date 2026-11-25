@@ -1,5 +1,4 @@
 import dagre from "@dagrejs/dagre";
-import type { UsedChange } from "@room/syntax";
 import type { AnalyzedDeclaration, AnalyzedFile } from "#/analyze-diff.server.ts";
 import type { ChangesGraph, GraphDeclaration } from "#/graph.server.ts";
 
@@ -51,8 +50,6 @@ export type GraphNode = {
   href: string | null;
   /** On hover. */
   title: string;
-  /** Clicking it opens or closes this (a folded file, see `foldedGraph`), instead of following `href`. */
-  toggle?: string;
 };
 /** `wide`: drawn thicker; a use from one app or package into another (see `appBoxesGraph`). */
 export type GraphEdge = { from: string; to: string; kind: string; title: string; wide?: boolean };
@@ -173,7 +170,7 @@ function withPoints(data: ScannedGraph, graph: Graph): Graph {
 }
 
 // ---------------------------------------------------------------------------
-// 1. Ripple + import map.
+// 1. Ripple.
 
 /**
  * The ripple: the changed declarations, every declaration that uses one, and
@@ -249,22 +246,7 @@ export function appBoxesGraph(data: ScannedGraph, files: Array<GraphFile>): Grap
 }
 
 // ---------------------------------------------------------------------------
-// 1a–b. Ripple + import map, for big ripples: nothing left out, less drawn.
-
-/** How many steps of the ripple each declaration is from a change (a change: 0). */
-function rippleDistances(data: ScannedGraph): Map<string, number> {
-  const distance = new Map(data.seeds.map((id) => [id, 0]));
-  const queue = [...data.seeds];
-  for (let index = 0; index < queue.length; index++) {
-    const id = queue[index] ?? "";
-    for (const edge of data.ripple.edges) {
-      if (edge.from !== id || distance.has(edge.to)) continue;
-      distance.set(edge.to, (distance.get(id) ?? 0) + 1);
-      queue.push(edge.to);
-    }
-  }
-  return distance;
-}
+// 1a. Ripple without file boxes.
 
 /** The edges again without repeats (same ends, same kind), and none from a node to itself. */
 function distinctEdges(edges: Array<GraphEdge>): Array<GraphEdge> {
@@ -278,174 +260,33 @@ function distinctEdges(edges: Array<GraphEdge>): Array<GraphEdge> {
 }
 
 /**
- * Ripple + import map with the far files folded: a file whose nearest
- * declaration is 3 or more steps from a change is one node ("9
- * declarations"), its arrows kept, to and from the file. Clicking one opens
- * it (`opened`: the files' boxes, "group:<path>"), in place.
+ * Ripple with a box per app or package, but none per file: each app's
+ * declarations side by side in its box, each with its file's name under
+ * it. A package or point used from several files of one app is one node in
+ * its box. Fewer boxes to place: a tighter graph.
  */
-export function foldedGraph(data: ScannedGraph, files: Array<GraphFile>, opened: Set<string>): Graph {
-  const graph = combinedGraph(data, files);
-  const distance = rippleDistances(data);
-  // Each box's nearest step from a change; a declaration not on the ripple (a link's end) counts as near.
-  const nearest = new Map<string, number>();
+export function rippleWithoutFileBoxes(data: ScannedGraph, files: Array<GraphFile>): Graph {
+  const graph = appBoxesGraph(data, files);
+  const appOfGroup = new Map(graph.groups.map((group) => [group.id, group.parent ?? null]));
+  // Each node's new id: a package's or point's copy per file box becomes one per app box.
+  const renamed = new Map<string, string>();
+  const nodes = new Map<string, GraphNode>();
   for (const node of graph.nodes) {
-    if (node.group === null || node.kind === "external" || node.kind === "point") continue;
-    nearest.set(node.group, Math.min(nearest.get(node.group) ?? Infinity, distance.get(node.id) ?? 0));
-  }
-  const folded = new Set([...nearest].filter(([group, steps]) => steps >= 3 && !opened.has(group)).map(([group]) => group));
-  if (folded.size === 0) return graph;
-
-  const foldOf = (node: GraphNode | undefined) => (node !== undefined && node.group !== null && folded.has(node.group) ? `fold:${node.group}` : null);
-  const byId = new Map(graph.nodes.map((node) => [node.id, node]));
-  const nodes: Array<GraphNode> = graph.nodes.filter((node) => foldOf(node) === null);
-  for (const group of folded) {
-    const inside = graph.nodes.filter((node) => node.group === group && node.kind !== "external" && node.kind !== "point");
-    const path = group.slice("group:".length);
-    nodes.push({
-      id: `fold:${group}`,
-      label: `${inside.length} ${inside.length === 1 ? "declaration" : "declarations"}`,
-      note: `${Math.min(...inside.map((node) => distance.get(node.id) ?? 0))}+ steps away · click to open`,
-      kind: "folded",
-      group,
-      href: null,
-      title: `${path}: ${inside.map((node) => node.label).join(", ")}`,
-      toggle: group,
-    });
-  }
-  const edges = distinctEdges(
-    graph.edges.map((edge) => ({ ...edge, from: foldOf(byId.get(edge.from)) ?? edge.from, to: foldOf(byId.get(edge.to)) ?? edge.to })),
-  );
-  return { nodes, edges, groups: graph.groups };
-}
-
-/**
- * Ripple + import map with one line per file: arrows from one declaration
- * into several in another file's box go as one line to a small node in
- * that box ("9"), which fans out inside it; and the same the other way,
- * from several in one box to one declaration elsewhere. Every arrow is
- * still there, the long ones bundled.
- */
-export function bundledGraph(data: ScannedGraph, files: Array<GraphFile>): Graph {
-  const graph = combinedGraph(data, files);
-  const byId = new Map(graph.nodes.map((node) => [node.id, node]));
-  const groupOf = (id: string) => byId.get(id)?.group ?? null;
-  // A node's name: a package's copy in a box has an id of its own.
-  const name = (id: string) => byId.get(id)?.label ?? id;
-  const crosses = (edge: GraphEdge) => {
-    const from = groupOf(edge.from);
-    const to = groupOf(edge.to);
-    return from !== null && to !== null && from !== to;
-  };
-  const hubs: Array<GraphNode> = [];
-  const hub = (id: string, group: string, count: number, title: string): string => {
-    hubs.push({ id, label: String(count), note: null, kind: "hub", group, href: null, title });
-    return id;
-  };
-
-  // Into a box: one declaration to several in another file.
-  const into = new Map<string, Array<GraphEdge>>();
-  for (const edge of graph.edges) {
-    if (!crosses(edge)) continue;
-    const key = `${edge.from}\u0001${groupOf(edge.to)}`;
-    into.set(key, [...(into.get(key) ?? []), edge]);
-  }
-  const bundled = new Set<GraphEdge>();
-  const edges: Array<GraphEdge> = [];
-  for (const [key, list] of into) {
-    if (list.length < 2) continue;
-    const [from = "", group = ""] = key.split("\u0001");
-    const id = hub(`hub-in\u0000${key}`, group, list.length, `${name(from)} is used by ${list.length} declarations in ${group.slice("group:".length)}`);
-    edges.push({ from, to: id, kind: list[0]?.kind ?? "affected", title: `${name(from)} → ${list.length} in ${group.slice("group:".length)}` });
-    for (const edge of list) {
-      edges.push({ ...edge, from: id });
-      bundled.add(edge);
+    const app = node.group === null ? null : (appOfGroup.get(node.group) ?? null);
+    const copyOfFile = (node.kind === "external" || node.kind === "point") && node.group !== null && node.id.endsWith(`\u0000${node.group}`);
+    if (copyOfFile && node.group !== null) {
+      const id = `${node.id.slice(0, -(node.group.length + 1))}\u0000${app ?? node.group}`;
+      renamed.set(node.id, id);
+      if (!nodes.has(id)) nodes.set(id, { ...node, id, group: app });
+      continue;
     }
+    // Without its file's box, a declaration says which file it's in.
+    const file = node.group === null ? null : (node.group.slice("group:".length).split("/").at(-1) ?? null);
+    const note = file === null ? node.note : node.note === null ? file : `${file} · ${node.note}`;
+    nodes.set(node.id, { ...node, note, group: app });
   }
-  // Out of a box: several declarations in one file to one elsewhere.
-  const outOf = new Map<string, Array<GraphEdge>>();
-  for (const edge of graph.edges) {
-    if (bundled.has(edge) || !crosses(edge)) continue;
-    const key = `${groupOf(edge.from)}\u0001${edge.to}`;
-    outOf.set(key, [...(outOf.get(key) ?? []), edge]);
-  }
-  for (const [key, list] of outOf) {
-    if (list.length < 2) continue;
-    const [group = "", to = ""] = key.split("\u0001");
-    const id = hub(`hub-out\u0000${key}`, group, list.length, `${list.length} declarations in ${group.slice("group:".length)} are used by ${name(to)}`);
-    edges.push({ from: id, to, kind: list[0]?.kind ?? "affected", title: `${list.length} in ${group.slice("group:".length)} → ${name(to)}` });
-    for (const edge of list) {
-      edges.push({ ...edge, to: id });
-      bundled.add(edge);
-    }
-  }
-  return { nodes: [...graph.nodes, ...hubs], edges: [...graph.edges.filter((edge) => !bundled.has(edge)), ...edges], groups: graph.groups };
-}
-
-// ---------------------------------------------------------------------------
-// 2. Reach flow: declarations to what they can now reach.
-
-/**
- * Each new reach (declarations that reach a capability they didn't): the
- * chains of declarations that lead to it, then the package or global that
- * gives it, then the capability. Steps the changes added are green. At most
- * 6 chains per way, the rest counted.
- */
-export function reachFlowGraph(data: ScannedGraph, files: Array<GraphFile>): Graph {
-  const ids: Array<string> = [];
-  const edges: Array<GraphEdge> = [];
-  const extra: Array<GraphNode> = [];
-  const addEdge = (edge: GraphEdge) => {
-    const known = edges.find((other) => other.from === edge.from && other.to === edge.to);
-    if (known === undefined) edges.push(edge);
-    else if (edge.kind === "new") known.kind = "new";
-  };
-  for (const flow of data.reach) {
-    const target = data.targets[flow.target];
-    const name = target?.label ?? flow.target;
-    if (!extra.some((node) => node.id === flow.target)) {
-      extra.push({ id: flow.target, label: name, note: target?.about ?? null, kind: target?.kind ?? "capability", group: null, href: null, title: `Reaches ${name}` });
-    }
-    ids.push(flow.origin);
-    addEdge({ from: flow.origin, to: flow.target, kind: "old", title: `${label(data, flow.origin)} is ${name}` });
-    for (const chain of flow.chains) {
-      chain.forEach((step, index) => {
-        ids.push(step.id);
-        const to = chain[index + 1]?.id ?? flow.origin;
-        if (to !== step.id) addEdge({ from: step.id, to, kind: step.isNew ? "new" : "old", title: `${label(data, step.id)} ${step.isNew ? "newly " : ""}uses ${label(data, to)}` });
-      });
-    }
-    if (flow.count > flow.chains.length) {
-      const id = `more:${flow.target}\0${flow.origin}`;
-      extra.push({ id, label: `+${flow.count - flow.chains.length} more declarations`, note: null, kind: "more", group: null, href: null, title: "Reach it the same way" });
-      addEdge({ from: id, to: flow.origin, kind: "old", title: `${flow.count - flow.chains.length} more declarations reach ${name} this way` });
-    }
-  }
-  const graph = graphOf(data, files, ids, []);
-  graph.nodes.push(...extra);
-  graph.edges = edges;
-  return graph;
-}
-
-// ---------------------------------------------------------------------------
-// 3. Neighbors: one declaration, what it uses that changed, and what uses it.
-
-export type Neighbors = {
-  /** What it uses that's new, changed, or uses what changed. */
-  uses: Array<{ name: string; status: UsedChange["status"] }>;
-  /** What uses it, anywhere: its label, the file when that's another, and its status. Null: not known (yet). */
-  usedBy: Array<{ label: string; path: string | null; status: string }> | null;
-};
-
-export function neighborsOf(file: AnalyzedFile, declaration: AnalyzedDeclaration, data: ScannedGraph | null): Neighbors {
-  const uses = [...new Map(declaration.uses.map((use) => [use.name, use])).values()].map((use) => ({ name: use.name, status: use.status }));
-  const line = declaration.after?.startLine;
-  const id = data === null ? undefined : data.seeds.find((seed) => data.declarations[seed]?.path === file.path && data.declarations[seed]?.line === line);
-  if (data === null || id === undefined) return { uses, usedBy: data === null ? null : [] };
-  const usedBy = (data.users[id] ?? []).flatMap((user) => {
-    const found = data.declarations[user];
-    return found === undefined ? [] : [{ label: found.label, path: found.path === file.path ? null : found.path, status: found.status }];
-  });
-  return { uses, usedBy };
+  const edges = distinctEdges(graph.edges.map((edge) => ({ ...edge, from: renamed.get(edge.from) ?? edge.from, to: renamed.get(edge.to) ?? edge.to })));
+  return { nodes: [...nodes.values()], edges, groups: graph.groups.filter((group) => group.id.startsWith("package:")) };
 }
 
 // ---------------------------------------------------------------------------
