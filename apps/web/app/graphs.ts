@@ -55,8 +55,9 @@ export type GraphNode = {
 export type GraphEdge = { from: string; to: string; kind: string; title: string; wide?: boolean };
 /**
  * The boxes: one per file ("group:<path>"), and around those, one per app
- * or package ("package:<dir>", see `appBoxesGraph`). `parent`: the box it's
- * drawn in.
+ * or package ("package:<dir>", see `appBoxesGraph`); or, instead of the
+ * files', one per folder ("folder:<package dir>\0<folder>", see
+ * `rippleInFolders`). `parent`: the box it's drawn in.
  */
 export type GraphGroup = { id: string; label: string; parent?: string };
 export type Graph = { nodes: Array<GraphNode>; edges: Array<GraphEdge>; groups: Array<GraphGroup> };
@@ -246,7 +247,7 @@ export function appBoxesGraph(data: ScannedGraph, files: Array<GraphFile>): Grap
 }
 
 // ---------------------------------------------------------------------------
-// 1a. Ripple without file boxes.
+// 1a. Ripple without file boxes: none, or a box per folder.
 
 /** The edges again without repeats (same ends, same kind), and none from a node to itself. */
 function distinctEdges(edges: Array<GraphEdge>): Array<GraphEdge> {
@@ -260,6 +261,34 @@ function distinctEdges(edges: Array<GraphEdge>): Array<GraphEdge> {
 }
 
 /**
+ * The graph without its files' boxes: what was in a file's box goes to
+ * `boxOf` that box (null: no box), and `groups` are the boxes now. A
+ * declaration says which file it's in under its name; a package's or
+ * point's copy per file box becomes one per new box.
+ */
+function withoutFileBoxes(graph: Graph, boxOf: Map<string, string | null>, groups: Array<GraphGroup>): Graph {
+  // Each node's new id: a copy per file box becomes one per new box.
+  const renamed = new Map<string, string>();
+  const nodes = new Map<string, GraphNode>();
+  for (const node of graph.nodes) {
+    const box = node.group === null ? null : (boxOf.get(node.group) ?? null);
+    const copyOfFile = (node.kind === "external" || node.kind === "point") && node.group !== null && node.id.endsWith(`\u0000${node.group}`);
+    if (copyOfFile && node.group !== null) {
+      const id = `${node.id.slice(0, -(node.group.length + 1))}\u0000${box ?? node.group}`;
+      renamed.set(node.id, id);
+      if (!nodes.has(id)) nodes.set(id, { ...node, id, group: box });
+      continue;
+    }
+    // Without its file's box, a declaration says which file it's in.
+    const file = node.group === null ? null : (node.group.slice("group:".length).split("/").at(-1) ?? null);
+    const note = file === null ? node.note : node.note === null ? file : `${file} · ${node.note}`;
+    nodes.set(node.id, { ...node, note, group: box });
+  }
+  const edges = distinctEdges(graph.edges.map((edge) => ({ ...edge, from: renamed.get(edge.from) ?? edge.from, to: renamed.get(edge.to) ?? edge.to })));
+  return { nodes: [...nodes.values()], edges, groups };
+}
+
+/**
  * Ripple with a box per app or package, but none per file: each app's
  * declarations side by side in its box, each with its file's name under
  * it. A package or point used from several files of one app is one node in
@@ -267,26 +296,94 @@ function distinctEdges(edges: Array<GraphEdge>): Array<GraphEdge> {
  */
 export function rippleWithoutFileBoxes(data: ScannedGraph, files: Array<GraphFile>): Graph {
   const graph = appBoxesGraph(data, files);
-  const appOfGroup = new Map(graph.groups.map((group) => [group.id, group.parent ?? null]));
-  // Each node's new id: a package's or point's copy per file box becomes one per app box.
-  const renamed = new Map<string, string>();
-  const nodes = new Map<string, GraphNode>();
-  for (const node of graph.nodes) {
-    const app = node.group === null ? null : (appOfGroup.get(node.group) ?? null);
-    const copyOfFile = (node.kind === "external" || node.kind === "point") && node.group !== null && node.id.endsWith(`\u0000${node.group}`);
-    if (copyOfFile && node.group !== null) {
-      const id = `${node.id.slice(0, -(node.group.length + 1))}\u0000${app ?? node.group}`;
-      renamed.set(node.id, id);
-      if (!nodes.has(id)) nodes.set(id, { ...node, id, group: app });
-      continue;
+  const boxOf = new Map(graph.groups.map((group) => [group.id, group.parent ?? null]));
+  return withoutFileBoxes(graph, boxOf, graph.groups.filter((group) => group.id.startsWith("package:")));
+}
+
+/**
+ * Ripple with a box per folder instead of per file, in the app's or
+ * package's box. `nested` false: one box per folder that has a changed or
+ * affected file, named by its path from the package ("src/domain/billing").
+ * `nested` true: those folders, and the folders above them that are worth a
+ * box: ones that hold two or more of them; a folder with only one, and no
+ * files of its own, is left out (its name goes on its one folder's). The
+ * root of a package is the package's own box.
+ */
+export function rippleInFolders(data: ScannedGraph, files: Array<GraphFile>, nested: boolean): Graph {
+  const graph = appBoxesGraph(data, files);
+  const packageGroups = graph.groups.filter((group) => group.id.startsWith("package:"));
+  /** A file's box: its package's box (or none), the package's folder, and the file's folder from there ("" its root). */
+  const placeOf = (group: GraphGroup) => {
+    const path = group.id.slice("group:".length);
+    const packageBox = group.parent ?? null;
+    const packageDir = packageBox === null ? "" : packageBox.slice("package:".length);
+    const inPackage = packageDir === "" ? path : path.slice(packageDir.length + 1);
+    const slash = inPackage.lastIndexOf("/");
+    return { packageBox, packageDir, folder: slash === -1 ? "" : inPackage.slice(0, slash) };
+  };
+  const folderId = (packageDir: string, folder: string) => `folder:${packageDir}\u0000${folder}`;
+  const fileGroups = graph.groups.filter((group) => group.id.startsWith("group:"));
+  const boxOf = new Map<string, string | null>();
+  const folderGroups = new Map<string, GraphGroup>();
+
+  if (!nested) {
+    for (const group of fileGroups) {
+      const place = placeOf(group);
+      if (place.folder === "") {
+        boxOf.set(group.id, place.packageBox);
+        continue;
+      }
+      const id = folderId(place.packageDir, place.folder);
+      boxOf.set(group.id, id);
+      if (!folderGroups.has(id)) folderGroups.set(id, { id, label: place.folder, ...(place.packageBox === null ? {} : { parent: place.packageBox }) });
     }
-    // Without its file's box, a declaration says which file it's in.
-    const file = node.group === null ? null : (node.group.slice("group:".length).split("/").at(-1) ?? null);
-    const note = file === null ? node.note : node.note === null ? file : `${file} · ${node.note}`;
-    nodes.set(node.id, { ...node, note, group: app });
+  } else {
+    // Per package: the folders with files, and every folder above them.
+    const places = fileGroups.map((group) => ({ group, ...placeOf(group) }));
+    for (const packageDir of new Set(places.map((place) => place.packageDir))) {
+      const mine = places.filter((place) => place.packageDir === packageDir);
+      const packageBox = mine[0]?.packageBox ?? null;
+      const withFiles = new Set(mine.map((place) => place.folder));
+      // Each folder's folders that lead to files.
+      const children = new Map<string, Set<string>>();
+      for (const folder of withFiles) {
+        let child = folder;
+        while (child !== "") {
+          const slash = child.lastIndexOf("/");
+          const parent = slash === -1 ? "" : child.slice(0, slash);
+          children.set(parent, (children.get(parent) ?? new Set()).add(child));
+          child = parent;
+        }
+      }
+      // Worth a box: files of its own, or two or more folders that lead to files. The root is the package's box.
+      const kept = (folder: string) => folder !== "" && (withFiles.has(folder) || (children.get(folder)?.size ?? 0) >= 2);
+      const keptAbove = (folder: string): string => {
+        let above = folder;
+        while (above !== "") {
+          const slash = above.lastIndexOf("/");
+          above = slash === -1 ? "" : above.slice(0, slash);
+          if (above === "" || kept(above)) return above;
+        }
+        return "";
+      };
+      const allFolders = new Set([...withFiles, ...children.keys(), ...[...children.values()].flatMap((set) => [...set])]);
+      for (const folder of allFolders) {
+        if (!kept(folder)) continue;
+        const above = keptAbove(folder);
+        const id = folderId(packageDir, folder);
+        // Named from the box it's in: "domain/billing" in "src".
+        const label = above === "" ? folder : folder.slice(above.length + 1);
+        const parent = above === "" ? packageBox : folderId(packageDir, above);
+        folderGroups.set(id, { id, label, ...(parent === null ? {} : { parent }) });
+      }
+      for (const place of mine) boxOf.set(place.group.id, place.folder === "" ? packageBox : folderId(packageDir, place.folder));
+    }
   }
-  const edges = distinctEdges(graph.edges.map((edge) => ({ ...edge, from: renamed.get(edge.from) ?? edge.from, to: renamed.get(edge.to) ?? edge.to })));
-  return { nodes: [...nodes.values()], edges, groups: graph.groups.filter((group) => group.id.startsWith("package:")) };
+
+  // Outer boxes first: drawn under the ones in them.
+  const depth = (group: GraphGroup) => group.id.split("\u0000")[1]?.split("/").length ?? 0;
+  const folders = [...folderGroups.values()].sort((a, b) => depth(a) - depth(b));
+  return withoutFileBoxes(graph, boxOf, [...packageGroups, ...folders]);
 }
 
 // ---------------------------------------------------------------------------

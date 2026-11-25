@@ -34,8 +34,10 @@ export type ChangeEntry = {
  *   the uses they added or removed, in a box per file in a box per app or
  *   package. A clicked declaration is focused: all but its paths fade.
  * - flat ("Ripple, no file boxes"): the same, with only the apps' boxes.
+ * - folders, nested: the same, with a box per folder instead of per file;
+ *   nested: every folder worth a box, inside the one above it.
  */
-export type ChangeView = "declarations" | "lines" | "module" | "reach" | "combined" | "flat";
+export type ChangeView = "declarations" | "lines" | "module" | "reach" | "combined" | "flat" | "folders" | "nested";
 
 /** The views that show each file as its declarations. */
 function byDeclarations(view: ChangeView): boolean {
@@ -534,7 +536,7 @@ export const FileDiffView = memo(function FileDiffView({ entry, view }: { entry:
           file={file}
           declarations={file.declarations}
           // Ripple + import map is read declaration by declaration from the graph: all open.
-          openAll={view === "combined" || view === "flat"}
+          openAll={view === "combined" || view === "flat" || view === "folders" || view === "nested"}
           // The other views are read for what the code does: no list of what didn't change.
           listUnchanged={view === "declarations"}
         />

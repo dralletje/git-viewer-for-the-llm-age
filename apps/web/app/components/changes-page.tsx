@@ -66,13 +66,15 @@ export function ChangesPage({
     asked === "lines" ||
     asked === "module" ||
     asked === "combined" ||
-    asked === "flat"
+    asked === "flat" ||
+    asked === "folders" ||
+    asked === "nested"
       ? asked
       : "reach";
   // Ripple, with or without file boxes: the graph stays in the top of the
   // code while the files scroll below it, so a node clicked shows its code
   // under the graph (see GraphFrame).
-  const graph = view === "combined" || view === "flat";
+  const graph = view === "combined" || view === "flat" || view === "folders" || view === "nested";
   // The views that show declarations are about what runs: a file where only
   // types, comments or formatting changed isn't on them, nor in their tree.
   // The line diff and imports & exports show every file.
@@ -90,6 +92,8 @@ export function ChangesPage({
     { view: "module" as const, label: "Imports & exports", href: withView({ pathname, search }, "module") },
     { view: "combined" as const, label: "Ripple", href: withView({ pathname, search }, "combined"), experimental: true },
     { view: "flat" as const, label: "Ripple, no file boxes", href: withView({ pathname, search }, "flat"), experimental: true },
+    { view: "folders" as const, label: "Ripple, folder boxes", href: withView({ pathname, search }, "folders"), experimental: true },
+    { view: "nested" as const, label: "Ripple, nested folders", href: withView({ pathname, search }, "nested"), experimental: true },
   ];
 
   return (

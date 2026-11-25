@@ -4,7 +4,7 @@ import { useFetcher } from "react-router";
 import type { ChangeView } from "#/components/changes.tsx";
 import type { ChangesGraph } from "#/graph.server.ts";
 import { layoutGraphElk } from "#/graph-layout-elk.ts";
-import { appBoxesGraph, layoutGraph, rippleWithoutFileBoxes, type Graph, type GraphFile, type GraphLayout } from "#/graphs.ts";
+import { appBoxesGraph, layoutGraph, rippleInFolders, rippleWithoutFileBoxes, type Graph, type GraphFile, type GraphLayout } from "#/graphs.ts";
 
 /** The declaration graph of the changes: null while it's being found, or on a tab that doesn't need it. */
 const GraphContext = createContext<ChangesGraph | null>(null);
@@ -30,9 +30,10 @@ export function GraphProvider({ href, enabled, children }: { href: string; enabl
 
 /**
  * Above the files on the Ripple tabs, once the graph is found: what the
- * changes spread to, in a box per app or package, with a box per file in
- * those ("combined": Ripple) or without ("flat"). `pageTitle`: what these
- * changes are, for the bar over the drawing.
+ * changes spread to, in a box per app or package, with in those a box per
+ * file ("combined": Ripple), none ("flat"), a box per folder ("folders"),
+ * or nested folder boxes ("nested"). `pageTitle`: what these changes are,
+ * for the bar over the drawing.
  */
 export function GraphPanel({ view, files, pageTitle }: { view: ChangeView; files: Array<GraphFile>; pageTitle: string }) {
   const data = useContext(GraphContext);
@@ -63,6 +64,21 @@ export function GraphPanel({ view, files, pageTitle }: { view: ChangeView; files
       <span>Click a declaration to see only the paths through it; click the background to see everything.</span>
     </>
   );
+  if (view === "folders" || view === "nested") {
+    return (
+      <GraphFrame
+        title={
+          view === "folders"
+            ? "What the changes spread to, and the uses they added or removed, in a box per folder in a box per app or package"
+            : "What the changes spread to, and the uses they added or removed, in nested folder boxes in a box per app or package"
+        }
+        legend={legend}
+        graph={rippleInFolders(data, files, view === "nested")}
+        empty="No code that runs changed."
+        barTitle={pageTitle}
+      />
+    );
+  }
   if (view === "flat") {
     return (
       <GraphFrame
