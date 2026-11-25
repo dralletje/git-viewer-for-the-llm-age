@@ -13,8 +13,6 @@ export type { DeclarationChange, LineRange, UsedChange } from "#/compare-declara
 export { compareModules } from "#/compare-modules.ts";
 export type { ChangedUnit, ExportChange, ModuleChanges } from "#/compare-modules.ts";
 export type { Token } from "#/highlight.ts";
-export { compareOutlines } from "#/outline.ts";
-export type { OutlineNode, PartChange } from "#/outline.ts";
 export type { Import, ImportBinding } from "#/imports.ts";
 export { languageForPath } from "#/languages.ts";
 export type { LanguageName } from "#/languages.ts";

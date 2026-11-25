@@ -183,7 +183,31 @@ export async function analyzeFileDiff(file: FileDiff, language: LanguageName, bl
     changes,
   });
 
-  /** The declaration's old and new code, lined up: same lines side by side, changed ones paired in order. */
+  /**
+   * What a line runs, to compare two lines by: its code without comments and
+   * whitespace (strings as written), and without a `;` or `,` at its end.
+   * Empty for a comment or blank line. A line inside a string is all value.
+   */
+  const runsOn = (lines: Array<string>, tokens: Array<Array<Token>> | null, literals: Set<number>, line: number): string => {
+    const text = lines[line - 1] ?? "";
+    if (literals.has(line)) return `\0${text}`;
+    const lineTokens = tokens?.[line - 1];
+    const code =
+      lineTokens === undefined
+        ? text.replace(/\s+/g, "")
+        : lineTokens
+            .filter((token) => !(token.kind ?? "").startsWith("comment"))
+            .map((token) => ((token.kind ?? "").startsWith("string") ? token.text : token.text.replace(/\s+/g, "")))
+            .join("");
+    return code.replace(/[;,]$/, "");
+  };
+
+  /**
+   * The declaration's old and new code, lined up: same lines side by side,
+   * changed ones paired in order. Only what runs counts: a comment or blank
+   * line added shows as an unchanged line, one removed isn't shown, and two
+   * lines that differ only in comments or formatting are the same.
+   */
   const rows = (change: DeclarationChange): Array<DeclarationRow> => {
     const oldRange = change.before === null ? [] : range(change.before.startLine, change.before.endLine);
     const newRange = change.after === null ? [] : range(change.after.startLine, change.after.endLine);
@@ -207,27 +231,47 @@ export async function analyzeFileDiff(file: FileDiff, language: LanguageName, bl
         index++;
         continue;
       }
-      // Blank lines added or removed are left out (see blankOld).
       const removed: Array<number> = [];
       const added: Array<number> = [];
       while (index < steps.length && steps[index]?.kind !== "same") {
         const current = steps[index];
-        const oldLine = current?.kind === "removed" ? (oldRange[current.a] ?? 0) : null;
-        const newLine = current?.kind === "added" ? (newRange[current.b] ?? 0) : null;
-        if (oldLine !== null && !blankOld(oldLine)) removed.push(oldLine);
-        if (newLine !== null && !blankNew(newLine)) added.push(newLine);
+        if (current?.kind === "removed") removed.push(oldRange[current.a] ?? 0);
+        if (current?.kind === "added") added.push(newRange[current.b] ?? 0);
         index++;
       }
-      for (let pair = 0; pair < Math.max(removed.length, added.length); pair++) {
-        const oldLine = removed[pair];
-        const newLine = added[pair];
-        const words = oldLine !== undefined && newLine !== undefined ? changedWords(oldLines[oldLine - 1] ?? "", newLines[newLine - 1] ?? "") : null;
+      // A removed comment or blank line: nothing that ran is gone, so it isn't shown.
+      const removedCode = removed.filter((line) => runsOn(oldLines, before.lines, oldLiterals, line) !== "");
+      let next = 0;
+      for (const newLine of added) {
+        const uses = change.uses.filter((use) => use.line === newLine);
+        const runs = runsOn(newLines, after.lines, newLiterals, newLine);
+        // An added comment or blank line: shown, as a line that didn't change.
+        if (runs === "") {
+          result.push({ same: true, left: null, right: side(newLines, after.lines, newLine, null), uses: uses.length === 0 ? null : uses });
+          continue;
+        }
+        const oldLine = removedCode[next];
+        next++;
+        // Only its comments or formatting changed: the same line.
+        if (oldLine !== undefined && runsOn(oldLines, before.lines, oldLiterals, oldLine) === runs) {
+          result.push({
+            same: true,
+            left: side(oldLines, before.lines, oldLine, null),
+            right: side(newLines, after.lines, newLine, null),
+            uses: uses.length === 0 ? null : uses,
+          });
+          continue;
+        }
+        const words = oldLine !== undefined ? changedWords(oldLines[oldLine - 1] ?? "", newLines[newLine - 1] ?? "") : null;
         result.push({
           same: false,
           left: oldLine === undefined ? null : side(oldLines, before.lines, oldLine, words?.before ?? null),
-          right: newLine === undefined ? null : side(newLines, after.lines, newLine, words?.after ?? null),
+          right: side(newLines, after.lines, newLine, words?.after ?? null),
           uses: null,
         });
+      }
+      for (const oldLine of removedCode.slice(next)) {
+        result.push({ same: false, left: side(oldLines, before.lines, oldLine, null), right: null, uses: null });
       }
     }
     return result;

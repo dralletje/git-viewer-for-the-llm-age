@@ -1,5 +1,5 @@
 import { data, redirect } from "react-router";
-import { openRepository, resolveCommit } from "@room/git";
+import { branchRef, openRepository, resolveCommit } from "@room/git";
 import { commitPath, repositoryPath } from "#/paths.ts";
 import { repositoryFromParams } from "#/repository.server.ts";
 import type { Route } from "./+types/route.ts";
@@ -12,7 +12,9 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   }
 
   const repository = await openRepository(source);
-  const head = await resolveCommit(repository, `refs/heads/${params.branch}`);
+  // A local branch, or origin's of that name (see listBranches).
+  const ref = await branchRef(repository, params.branch);
+  const head = ref === null ? null : await resolveCommit(repository, ref);
   if (head === null) {
     throw data(`There is no branch "${params.branch}".`, 404);
   }

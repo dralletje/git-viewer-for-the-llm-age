@@ -1,6 +1,7 @@
-import { dirname, join, normalize } from "node:path/posix";
+import { dirname, join, matchesGlob, normalize } from "node:path/posix";
 import type { Import, LocalExports, ModuleGraph, SourceScan } from "@room/syntax";
 import { allCapabilities, capabilityOfGlobal, capabilityOfModule, directCapabilities, type Capability } from "#/capabilities.ts";
+import { pointOfDeclaration, pointOfPackage, type Point } from "#/points.ts";
 
 /** One file of the repository, scanned (see @room/syntax's `scanSource`). */
 export type ScannedFile = SourceScan & { path: string };
@@ -14,8 +15,14 @@ export type ScannedFile = SourceScan & { path: string };
  */
 export type ReachStep = { path: string; line: number; via: string; name: string | null };
 
-/** For each file, each capability it reaches, by the shortest chain of imports; direct use is a chain of one step. */
-export type RepositoryReach = Map<string, Map<Capability, Array<ReachStep>>>;
+/**
+ * What a file can reach: a capability, or one of the repository's points
+ * (see points.ts), as "point:<name>".
+ */
+export type ReachTarget = Capability | `point:${string}`;
+
+/** For each file, each target it reaches, by the shortest chain of imports; direct use is a chain of one step. */
+export type RepositoryReach = Map<string, Map<ReachTarget, Array<ReachStep>>>;
 
 /** Extensions a TS/JS import can leave out, in the order TypeScript tries them. */
 const extensions = [".ts", ".tsx", ".d.ts", ".js", ".jsx", ".mts", ".cts", ".mjs", ".cjs"];
@@ -269,11 +276,18 @@ function endOfString(text: string, start: number): number {
  * A file without a module graph (it couldn't be parsed, or it's CommonJS,
  * whose exports aren't known from syntax) counts as a whole.
  *
- * Each capability keeps the shortest chain (breadth first, from where it's
+ * Each target keeps the shortest chain (breadth first, from where it's
  * reached back along the edges); steps within a file aren't in the chain,
  * which lists the imports that lead to the code that reaches it.
+ *
+ * The repository's `points` are targets too: a point's code (its files,
+ * its declarations) reaches it, and so does importing from a package it
+ * names. They come first: a package a point names gives that point, not
+ * its capability (Twilio's package isn't "network"), and a point's own
+ * code is a wall: what's past it is that point, so a capability or another
+ * point isn't reached through it.
  */
-export function computeReach(files: Array<ScannedFile>, resolve: (from: string, specifier: string) => string | null): RepositoryReach {
+export function computeReach(files: Array<ScannedFile>, resolve: (from: string, specifier: string) => string | null, points: Array<Point> = []): RepositoryReach {
   const byPath = new Map(files.map((scanned) => [scanned.path, scanned]));
   const all = (path: string) => `${path}\0all`;
   const load = (path: string) => `${path}\0load`;
@@ -332,16 +346,42 @@ export function computeReach(files: Array<ScannedFile>, resolve: (from: string, 
     list.push({ node: from, step });
     leadsTo.set(to, list);
   };
-  /** Where each capability is reached directly: the node, and the one step that is the chain. */
-  const seeds: Array<{ node: string; capability: Capability; step: ReachStep }> = [];
+  /** Where each target is reached directly: the node, and the one step that is the chain. */
+  const seeds: Array<{ node: string; capability: ReachTarget; step: ReachStep }> = [];
   const seedModule = (node: string, path: string, line: number, source: string, name: string | null) => {
+    // A package a point names gives the point, not its capability.
+    const point = pointOfPackage(points, source);
+    if (point !== null) {
+      seeds.push({ node, capability: `point:${point}`, step: { path, line, via: source, name } });
+      return;
+    }
     const capability = capabilityOfModule(source);
     if (capability !== null) seeds.push({ node, capability, step: { path, line, via: source, name } });
   };
 
+  /** The nodes that are a point's own code, and which point: no other target is reached through them. */
+  const memberOf = new Map<string, ReachTarget>();
+  /** A file a point names: all of it is the point. */
+  const pointOfFile = (path: string): string | null => points.find((point) => point.files.some((pattern) => matchesGlob(path, pattern)))?.name ?? null;
+
   for (const scanned of files) {
     const path = scanned.path;
     link(all(path), load(path), null);
+
+    // A point's code: what it declares reaches the point, itself the step.
+    const filePoint = pointOfFile(path);
+    if (filePoint !== null) {
+      for (const node of [all(path), load(path)]) memberOf.set(node, `point:${filePoint}`);
+      if (!followed(scanned)) seeds.push({ node: load(path), capability: `point:${filePoint}`, step: { path, line: 1, via: path, name: null } });
+    }
+    if (followed(scanned)) {
+      scanned.module.units.forEach((code, index) => {
+        const point = filePoint ?? pointOfDeclaration(points, path, code.names.join(", "));
+        if (point === null) return;
+        memberOf.set(unit(path, index), `point:${point}`);
+        seeds.push({ node: unit(path, index), capability: `point:${point}`, step: { path, line: code.startLine, via: code.names.join(", ") || path, name: null } });
+      });
+    }
 
     if (!followed(scanned)) {
       // As a whole: everything it reaches, it reaches on load.
@@ -424,12 +464,16 @@ export function computeReach(files: Array<ScannedFile>, resolve: (from: string, 
     }
   }
 
-  const reached = new Map<string, Map<Capability, Array<ReachStep>>>();
-  for (const capability of allCapabilities) {
+  const reached = new Map<string, Map<ReachTarget, Array<ReachStep>>>();
+  const targets: Array<ReachTarget> = [...points.map((point): ReachTarget => `point:${point.name}`), ...allCapabilities];
+  for (const capability of targets) {
     const chains = new Map<string, Array<ReachStep>>();
     const queue: Array<string> = [];
     const reach = (node: string, chain: Array<ReachStep>) => {
       if (chains.has(node)) return;
+      // Another point's code is a wall: past it is that point.
+      const member = memberOf.get(node);
+      if (member !== undefined && member !== capability) return;
       chains.set(node, chain);
       queue.push(node);
     };
@@ -442,7 +486,7 @@ export function computeReach(files: Array<ScannedFile>, resolve: (from: string, 
     for (const [node, chain] of chains) {
       if (!node.endsWith("\0all")) continue;
       const path = node.slice(0, -"\0all".length);
-      const theirs = reached.get(path) ?? new Map<Capability, Array<ReachStep>>();
+      const theirs = reached.get(path) ?? new Map<ReachTarget, Array<ReachStep>>();
       theirs.set(capability, chain);
       reached.set(path, theirs);
     }

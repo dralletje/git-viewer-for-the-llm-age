@@ -22,6 +22,14 @@ export type Branch = {
   subject: string;
   author: string;
   isDefault: boolean;
+  /** Only on origin: no local branch has its name. */
+  remote: boolean;
+  /**
+   * Origin's branch of this name, when the local branch tracks it, has this
+   * many commits the local one doesn't: someone pushed, and it wasn't
+   * pulled. 0 otherwise, and for origin's own branches. As of the last fetch.
+   */
+  behind: number;
 };
 
 export type Commit = {
@@ -115,6 +123,27 @@ function openGithubRepository(owner: string, name: string, maxAgeMs: number): Pr
   return work.finally(() => inFlight.delete(gitDir));
 }
 
+/**
+ * Fetches origin now, whenever it was fetched last. A GitHub clone gets
+ * origin's branches as its own, as it does when opened; a repository on this
+ * machine only gets origin's (refs/remotes/origin/…): its own branches and
+ * work tree stay as they are. Origin's branches that are gone go here too.
+ */
+export async function fetchRepository(repository: Repository): Promise<void> {
+  if (repository.source.kind === "github") {
+    await runGit(["fetch", "--prune", "--quiet", "origin", "+refs/heads/*:refs/heads/*"], { cwd: repository.directory });
+    lastFetched.set(repository.directory, Date.now());
+    return;
+  }
+  await runGit(["fetch", "--prune", "--quiet", "origin"], { cwd: repository.directory });
+}
+
+/**
+ * The branches: the local ones, then origin's that have no local branch of
+ * their name (`remote`), each newest commit first, so a branch someone pushed
+ * shows without checking it out. A GitHub repository's clone has its
+ * branches as local ones.
+ */
 export async function listBranches(repository: Repository): Promise<Array<Branch>> {
   const head = await runGit(["symbolic-ref", "--quiet", "HEAD"], { cwd: repository.directory }).catch(() => "");
   const defaultBranch = head.trim().replace(/^refs\/heads\//, "");
@@ -123,23 +152,40 @@ export async function listBranches(repository: Repository): Promise<Array<Branch
     [
       "for-each-ref",
       "--sort=-committerdate",
-      "--format=%(refname:lstrip=2)%1f%(objectname)%1f%(committerdate:iso-strict)%1f%(subject)%1f%(authorname)%1e",
+      "--format=%(refname)%1f%(objectname)%1f%(committerdate:iso-strict)%1f%(subject)%1f%(authorname)%1f%(upstream:track)%1f%(upstream)%1e",
       "refs/heads",
+      "refs/remotes/origin",
     ],
     { cwd: repository.directory },
   );
 
-  return records(output).map((fields) => {
-    const name = fields[0] ?? "";
-    return {
-      name: name,
-      sha: fields[1] ?? "",
-      date: fields[2] ?? "",
-      subject: fields[3] ?? "",
-      author: fields[4] ?? "",
-      isDefault: name === defaultBranch,
-    };
+  const branches = records(output).flatMap((fields) => {
+    const ref = fields[0] ?? "";
+    const remote = ref.startsWith("refs/remotes/origin/");
+    const name = remote ? ref.slice("refs/remotes/origin/".length) : ref.slice("refs/heads/".length);
+    // origin's HEAD only says which branch is its default.
+    if (remote && name === "HEAD") return [];
+    // "[ahead 2, behind 3]", "[behind 3]", "[gone]" or nothing. Only against
+    // origin's branch of the same name: a branch made from main tracks
+    // origin/main, and is "behind" it without anything being unpulled.
+    const sameOnOrigin = fields[6] === `refs/remotes/origin/${name}`;
+    const behind = sameOnOrigin ? Number(/behind (\d+)/.exec(fields[5] ?? "")?.[1] ?? "0") : 0;
+    return [{ name, sha: fields[1] ?? "", date: fields[2] ?? "", subject: fields[3] ?? "", author: fields[4] ?? "", isDefault: !remote && name === defaultBranch, remote, behind }];
   });
+  // The local ones first, then origin's: each newest commit first.
+  const local = new Set(branches.filter((branch) => !branch.remote).map((branch) => branch.name));
+  return [...branches.filter((branch) => !branch.remote), ...branches.filter((branch) => branch.remote && !local.has(branch.name))];
+}
+
+/**
+ * The ref a branch name is (see `listBranches`): the local branch, else
+ * origin's of that name; null when there's neither.
+ */
+export async function branchRef(repository: Repository, name: string): Promise<string | null> {
+  for (const ref of [`refs/heads/${name}`, `refs/remotes/origin/${name}`]) {
+    if ((await resolveCommit(repository, ref)) !== null) return ref;
+  }
+  return null;
 }
 
 /** Resolves a branch name or (abbreviated) sha to a full commit sha, or null. */
@@ -265,6 +311,17 @@ export async function getFileDiff(
       : ["diff", ...options, "--end-of-options", range.from, range.to, "--", ...pathspec];
   const patch = await runGit(args, { cwd: repository.directory });
   return parseDiff(patch).find((file) => file.path === paths.path) ?? null;
+}
+
+/**
+ * The paths that differ between two commits or trees (`from` null: nothing
+ * before, all of `to`), renamed files under their new path.
+ */
+export async function listChangedPaths(repository: Repository, from: string | null, to: string): Promise<Array<string>> {
+  const output = await runGit(["diff", "--name-only", "-z", "--find-renames", "--no-ext-diff", "--end-of-options", from ?? emptyTree, to], {
+    cwd: repository.directory,
+  });
+  return output.split("\0").filter((path) => path !== "");
 }
 
 export type Comparison = {

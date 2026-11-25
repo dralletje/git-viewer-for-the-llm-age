@@ -1,29 +1,25 @@
 import { Link } from "react-router";
 import type { Commit } from "@room/git";
+import { ChangesHeader } from "#/components/changes-header.tsx";
 import { formatDate } from "#/paths.ts";
 
 export function CommitHeader({ commit, parentHref }: { commit: Commit; parentHref: (parent: string) => string }) {
   return (
-    <header>
-      <h2 className="text-xl font-semibold">{commit.subject}</h2>
-      {commit.body !== "" && <pre className="mt-2 whitespace-pre-wrap font-sans text-sm text-neutral-600 dark:text-neutral-400">{commit.body}</pre>}
-      <dl className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-xs text-neutral-500">
-        <div>
-          <dt className="inline">Author </dt>
-          <dd className="inline text-neutral-900 dark:text-neutral-100">{commit.authorName}</dd>
-        </div>
-        <div>
-          <dt className="inline">Date </dt>
-          <dd className="inline">{formatDate(commit.authorDate)}</dd>
-        </div>
-        <div>
-          <dt className="inline">Commit </dt>
-          <dd className="inline font-mono">{commit.sha}</dd>
-        </div>
-        {commit.parents.length > 0 && (
-          <div>
-            <dt className="inline">{commit.parents.length > 1 ? "Parents " : "Parent "}</dt>
-            <dd className="inline font-mono">
+    <ChangesHeader
+      title={commit.subject}
+      description={commit.body}
+      details={[
+        <>
+          Author <span className="text-neutral-900 dark:text-neutral-100">{commit.authorName}</span>
+        </>,
+        <>Date {formatDate(commit.authorDate)}</>,
+        <>
+          Commit <span className="font-mono">{commit.sha}</span>
+        </>,
+        commit.parents.length > 0 && (
+          <>
+            {commit.parents.length > 1 ? "Parents " : "Parent "}
+            <span className="font-mono">
               {commit.parents.map((parent, index) => (
                 <span key={parent}>
                   {index > 0 && " "}
@@ -32,12 +28,12 @@ export function CommitHeader({ commit, parentHref }: { commit: Commit; parentHre
                   </Link>
                 </span>
               ))}
-            </dd>
-          </div>
-        )}
-      </dl>
+            </span>
+          </>
+        ),
+      ]}
+    >
       {commit.parents.length > 1 && <p className="mt-2 text-xs text-neutral-500">A merge: showing what it changed compared to its first parent.</p>}
-    </header>
+    </ChangesHeader>
   );
 }
-

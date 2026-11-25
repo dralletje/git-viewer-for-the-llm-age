@@ -1,0 +1,9 @@
+{
+  "extends": ["@dral/tsconfig/modern", "@dral/tsconfig/reasonable"],
+  "include": ["src"],
+  "compilerOptions": {
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
+    "types": ["node"],
+    "rewriteRelativeImportExtensions": false
+  }
+}

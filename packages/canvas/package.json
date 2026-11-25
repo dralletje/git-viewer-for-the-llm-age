@@ -1,0 +1,20 @@
+{
+  "name": "@room/canvas",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "imports": {
+    "#/*": "./src/*"
+  },
+  "scripts": {
+    "typecheck": "tsc",
+    "test": "node --test 'src/**/*.test.ts'"
+  },
+  "devDependencies": {
+    "@dral/tsconfig": "catalog:",
+    "@types/node": "catalog:",
+    "typescript": "catalog:"
+  }
+}

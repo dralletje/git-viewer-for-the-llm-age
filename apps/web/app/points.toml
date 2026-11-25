@@ -1,0 +1,83 @@
+# What a repository's points reach (see points.ts): `input` is its files and
+# its `.room.toml`; `output` lists, for every declaration that reaches
+# something, "file declaration: target, target" (points first).
+
+name = "points"
+
+[[suites]]
+name = "a point takes over"
+
+[[suites.tests]]
+name = "code that reaches fetch through a point's files only reaches the point"
+input.toml = """
+[[points]]
+name = "Twilio"
+files = ["twilio.ts"]
+"""
+input.files."twilio.ts" = """
+export function sendSms(to: string) {
+  return fetch("https://api.twilio.com", { method: "POST", body: to });
+}
+"""
+input.files."notify.ts" = """
+import { sendSms } from "./twilio.ts";
+export function notify(to: string) {
+  return sendSms(to);
+}
+export function ping() {
+  return fetch("https://example.com");
+}
+"""
+output = [
+  "notify.ts notify: Twilio",
+  "notify.ts ping: network",
+  "twilio.ts sendSms: Twilio",
+]
+
+[[suites.tests]]
+name = "a package a point names is that point, not its capability"
+input.toml = """
+[[points]]
+name = "Medplum"
+packages = ["@medplum/*"]
+"""
+input.files."patient.ts" = """
+import { MedplumClient } from "@medplum/core";
+import { Pool } from "pg";
+const medplum = new MedplumClient();
+const pool = new Pool();
+export function load(id: string) {
+  return medplum.readResource("Patient", id);
+}
+export function count() {
+  return pool.query("select 1");
+}
+"""
+output = [
+  "patient.ts count: database",
+  "patient.ts load: Medplum",
+  "patient.ts medplum: Medplum",
+  "patient.ts pool: database",
+]
+
+[[suites.tests]]
+name = "a declaration named as a point, and what uses it"
+input.toml = """
+[[points]]
+name = "App database"
+declarations = ["database.ts#db"]
+"""
+input.files."database.ts" = """
+import { Kysely } from "kysely";
+export const db = new Kysely({});
+"""
+input.files."audit.ts" = """
+import { db } from "./database.ts";
+export function log(event: string) {
+  return db.insertInto("audit").values({ event }).execute();
+}
+"""
+output = [
+  "audit.ts log: App database",
+  "database.ts db: App database",
+]

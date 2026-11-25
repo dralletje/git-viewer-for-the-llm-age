@@ -193,12 +193,18 @@ importers:
 
   apps/web:
     dependencies:
+      '@dagrejs/dagre':
+        specifier: 1.1.4
+        version: 1.1.4
       '@react-router/node':
         specifier: ^8.5.2
         version: 8.5.2(react-router@8.5.2(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(typescript@7.0.2)
       '@react-router/serve':
         specifier: ^8.5.2
         version: 8.5.2(react-router@8.5.2(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(typescript@7.0.2)
+      '@room/canvas':
+        specifier: workspace:*
+        version: link:../../packages/canvas
       '@room/diff':
         specifier: workspace:*
         version: link:../../packages/diff
@@ -208,6 +214,9 @@ importers:
       '@room/syntax':
         specifier: workspace:*
         version: link:../../packages/syntax
+      elkjs:
+        specifier: 0.13.0
+        version: 0.13.0
       isbot:
         specifier: ^5.2.3
         version: 5.2.3
@@ -220,6 +229,9 @@ importers:
       react-router:
         specifier: ^8.5.2
         version: 8.5.2(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      smol-toml:
+        specifier: 1.9.1
+        version: 1.9.1
     devDependencies:
       '@dral/toml-tests':
         specifier: 5.2.0
@@ -254,6 +266,18 @@ importers:
       vite:
         specifier: ^8.3.8
         version: 8.3.8(@types/node@26.6.6)(jiti@2.7.0)
+
+  packages/canvas:
+    devDependencies:
+      '@dral/tsconfig':
+        specifier: 'catalog:'
+        version: 1.8.0
+      '@types/node':
+        specifier: 'catalog:'
+        version: 26.6.6
+      typescript:
+        specifier: 'catalog:'
+        version: 7.0.2
 
   packages/diff:
     devDependencies:
@@ -376,6 +400,13 @@ packages:
   '@babel/types@7.29.14':
     resolution: {integrity: sha512-UjI/dKmwJwT9pOszJitq2G6EObZPnsZUfdCr92z2TlF3EZK9J3EdfOKUrCzHl6wFthbzwhzl1Soc/UIwxRiq6w==}
     engines: {node: '>=6.9.0'}
+
+  '@dagrejs/dagre@1.1.4':
+    resolution: {integrity: sha512-QUTc54Cg/wvmlEUxB+uvoPVKFazM1H18kVHBQNmK2NbrDR5ihOCR6CXLnDSZzMcSQKJtabPUWridBOlJM3WkDg==}
+
+  '@dagrejs/graphlib@2.2.4':
+    resolution: {integrity: sha512-mepCf/e9+SKYy1d02/UkvSy6+6MoyXhVxP8lLDfA7BPE1X1d4dR0sZznmbM8/XVJ1GPM+Svnx7Xj6ZweByWUkw==}
+    engines: {node: '>17.0.0'}
 
   '@dral/toml-tests@5.2.0':
     resolution: {integrity: sha512-kh4BCS3TWx9Zi+VwgFynUy6Ui9jg3vKI5cfH4svaRliDwHHAPN8M0/iMfqal3WxQSreyAs1kkzgxZamrw69T2w==}
@@ -954,6 +985,10 @@ packages:
 
   electron-to-chromium@1.5.490:
     resolution: {integrity: sha512-I0dPyEsiaYAlbGJlr0SdRRGSWk9BpOz8AIo/4f93A6bAGuN3YafmT71rpss72SA05isaAkcAOYcW0F0H48om4Q==}
+
+  elkjs@0.13.0:
+    resolution: {integrity: sha512-Zzpft223EqD9qpNLI3W+e0sxB0Vzhzu66pg8qfq703Kc5OE8QSgxvcPYvZt/Aw2mw7hiTi3vLmk8lvnAvxglsA==}
+    deprecated: this package has been deprecated
 
   encodeurl@2.0.3:
     resolution: {integrity: sha512-mIteYONiEfc4xWf2F1WXovh1c8npzS00vNeiUPdwFF+QlVJni+gNvpQltLMQhob8rew/bWWc/bGTuUr0EUGt0w==}
@@ -1774,6 +1809,12 @@ snapshots:
       '@babel/helper-string-parser': 7.29.14
       '@babel/helper-validator-identifier': 7.29.7
 
+  '@dagrejs/dagre@1.1.4':
+    dependencies:
+      '@dagrejs/graphlib': 2.2.4
+
+  '@dagrejs/graphlib@2.2.4': {}
+
   '@dral/toml-tests@5.2.0':
     dependencies:
       smol-toml: 1.9.1
@@ -2225,6 +2266,8 @@ snapshots:
   ee-first@1.1.1: {}
 
   electron-to-chromium@1.5.490: {}
+
+  elkjs@0.13.0: {}
 
   encodeurl@2.0.3: {}
 

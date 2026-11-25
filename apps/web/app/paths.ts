@@ -48,6 +48,24 @@ export function fileChangesPath(
   return `${repository}/file?${query}`;
 }
 
+/**
+ * What a change does to what the repository's files can reach, as data:
+ * `head` against `base` (commits or trees; no base: nothing before). What a
+ * page of changes fetches once it's shown, since the scan can take a while.
+ */
+export function reachPath(repository: string, change: { head: string; base: string | null }): string {
+  const query = new URLSearchParams({ head: change.head });
+  if (change.base !== null) query.set("base", change.base);
+  return `${repository}/reach?${query}`;
+}
+
+/** The import links to and from a change's files, before and after, as data: what the graph tabs fetch. */
+export function graphPath(repository: string, change: { head: string; base: string | null }): string {
+  const query = new URLSearchParams({ head: change.head });
+  if (change.base !== null) query.set("base", change.base);
+  return `${repository}/graph?${query}`;
+}
+
 /** What changed in the work tree since the last commit, on the branch that's checked out. */
 export function workingChangesPath(repository: string, branch: string): string {
   return `${branchPath(repository, branch)}/changes`;

@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { Outlet, data, useLocation, useParams, useRouteLoaderData, type ShouldRevalidateFunctionArgs } from "react-router";
-import { checkedOutBranch, countWorkingChanges, listBranches, listCommits, listContainedBranches, openRepository, resolveCommit } from "@room/git";
+import { branchRef, checkedOutBranch, countWorkingChanges, listBranches, listCommits, listContainedBranches, openRepository, resolveCommit } from "@room/git";
 import { branchPath, commitPath, comparePath, repositoryLabel, repositoryPath, workingChangesPath } from "#/paths.ts";
 import { repositoryFromParams } from "#/repository.server.ts";
 import type { loader as compareLoader } from "../$owner.$repo.branch.$branch.compare/route.tsx";
@@ -22,7 +22,9 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   const count = Math.max(50, Number(new URL(request.url).searchParams.get("commits") ?? "50") || 50);
 
   const repository = await openRepository(source);
-  const sha = await resolveCommit(repository, `refs/heads/${branch}`);
+  // A local branch, or origin's of that name (see listBranches).
+  const ref = await branchRef(repository, branch);
+  const sha = ref === null ? null : await resolveCommit(repository, ref);
   if (sha === null) {
     throw data(`There is no branch "${branch}".`, 404);
   }
@@ -65,7 +67,11 @@ export async function loader({ params, request }: Route.LoaderArgs) {
  * The list only depends on the branch and how many commits it shows:
  * opening a commit or a comparison doesn't run git for it again.
  */
-export function shouldRevalidate({ currentUrl, nextUrl, currentParams, nextParams, defaultShouldRevalidate }: ShouldRevalidateFunctionArgs) {
+export function shouldRevalidate({ currentUrl, nextUrl, currentParams, nextParams, formMethod, defaultShouldRevalidate }: ShouldRevalidateFunctionArgs) {
+  // After a fetch: the branch may have new commits.
+  if (formMethod !== undefined) {
+    return defaultShouldRevalidate;
+  }
   // Opening the current changes, or refreshing them: count them again too.
   if (nextUrl.pathname.endsWith("/changes")) {
     return defaultShouldRevalidate;

@@ -44,6 +44,8 @@ export type TopLevelUnit = {
    * Empty for a unit that's only types.
    */
   runtimeFingerprint: string;
+  /** Its comments (the ones right above it too), whitespace collapsed: different when a comment changed. */
+  comments: string;
   /** 1-based. */
   line: number;
   /** 1-based, its whole statement: from the comments right above it to its last line. */
@@ -102,6 +104,8 @@ export function extractTopLevel(root: Node): TopLevel {
   // The first line of the comments right above the current statement (no blank line between).
   let commentsFrom: number | null = null;
   let commentsTo = 0;
+  // Those comments' text.
+  let commentsAbove: Array<string> = [];
   // Where each line starts in the root's text, to turn a node's offset into
   // a column. The root starts at its first statement, not at the file's start:
   // offsets count from there, and its first line from its column.
@@ -133,7 +137,9 @@ export function extractTopLevel(root: Node): TopLevel {
     // An import's fingerprint is what it imports, which is the same with or without types.
     const runtimeFingerprint = typeOnly ? "" : kind === "import" ? fingerprint : fingerprintOf(node, false);
     const line = node.startPosition.row + 1;
-    const startLine = commentsFrom !== null && commentsTo >= line - 1 ? commentsFrom : line;
+    const attached = commentsFrom !== null && commentsTo >= line - 1;
+    const startLine = attached && commentsFrom !== null ? commentsFrom : line;
+    const comments = [...(attached ? commentsAbove : []), ...commentsIn(node)].map(collapse).join("\n");
     units.push({
       key,
       kind,
@@ -145,6 +151,7 @@ export function extractTopLevel(root: Node): TopLevel {
       typeOnly,
       fingerprint,
       runtimeFingerprint,
+      comments,
       line,
       startLine,
       endLine: node.endPosition.row + 1,
@@ -156,8 +163,12 @@ export function extractTopLevel(root: Node): TopLevel {
     if (statement === null) continue;
     if (statement.type === "comment") {
       const from = statement.startPosition.row + 1;
-      if (commentsFrom === null || commentsTo < from - 1) commentsFrom = from;
+      if (commentsFrom === null || commentsTo < from - 1) {
+        commentsFrom = from;
+        commentsAbove = [];
+      }
       commentsTo = statement.endPosition.row + 1;
+      commentsAbove.push(statement.text);
       continue;
     }
     // (A comment run above an earlier statement ends before that statement,
@@ -523,6 +534,12 @@ function fingerprintOf(node: Node, types: boolean): string {
   };
   visit(node);
   return tokens.filter((token, index) => !(token === "," && [")", "]", "}", ">"].includes(tokens[index + 1] ?? ""))).join(" ");
+}
+
+/** The text of every comment in the code, in order. */
+function commentsIn(node: Node): Array<string> {
+  if (node.type === "comment") return [node.text];
+  return node.children.flatMap((child) => (child === null ? [] : commentsIn(child)));
 }
 
 function collapse(text: string): string {

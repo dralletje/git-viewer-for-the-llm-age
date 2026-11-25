@@ -1,11 +1,9 @@
-import { useMemo } from "react";
-import { data, useLocation, type ShouldRevalidateFunctionArgs } from "react-router";
+import { data, type ShouldRevalidateFunctionArgs } from "react-router";
 import { listCommits, openRepository, resolveCommit } from "@room/git";
 import { analyzeCommit, prefetchCommits } from "#/commit-analysis.server.ts";
-import { ChangesBody, ChangesView, FileTree, ViewTabs, type ChangeView } from "#/components/changes.tsx";
-import { ReachPanel, ReachProvider } from "#/components/reach.tsx";
-import { commitReach } from "#/reach.server.ts";
-import { commitPath, fileChangesPath, repositoryLabel, repositoryPath } from "#/paths.ts";
+import { ChangesPage } from "#/components/changes-page.tsx";
+import { commitPath, graphPath, reachPath, repositoryLabel, repositoryPath } from "#/paths.ts";
+import { changesReach } from "#/reach.server.ts";
 import { repositoryFromParams } from "#/repository.server.ts";
 import type { Route } from "./+types/route.ts";
 import { CommitHeader } from "./components.tsx";
@@ -36,12 +34,17 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     following.slice(1).map((next) => next.sha),
   );
 
+  // The reach scan starts now, not waited for: the page fetches it from
+  // reachHref once it's shown, and that request picks up this scan.
+  const reachBase = commit.parents[0] ?? null;
+  void changesReach(repository, { head: commit.sha, base: reachBase, files: commit.files });
+
   return {
     base: repositoryPath(source),
     branch: params.branch,
     commit: commit,
-    // Not waited for: the page shows the commit, and the reach streams in when scanned.
-    reach: commitReach(repository, commit),
+    reachHref: reachPath(repositoryPath(source), { head: commit.sha, base: reachBase }),
+    graphHref: graphPath(repositoryPath(source), { head: commit.sha, base: reachBase }),
   };
 }
 
@@ -58,65 +61,17 @@ export function shouldRevalidate({ currentUrl, nextUrl, currentParams, nextParam
 }
 
 export default function CommitPage({ loaderData }: Route.ComponentProps) {
-  const { base, branch, commit, reach } = loaderData;
-  // Only the address's path and query matter here: jumping to a file (its
-  // #hash) must not rebuild these, or the whole page renders again.
-  const { pathname, search } = useLocation();
-
-  const entries = useMemo(
-    () =>
-      commit.files.map((file, index) => ({
-        file: file,
-        id: `file-${index}`,
-        loadHref: withOpenFile({ pathname, search }, file.path, `file-${index}`),
-        codeHref: fileChangesPath(base, { commit: commit.sha }, file),
-      })),
-    [base, commit, pathname, search],
-  );
-
-  // Which way to show the changes (?view=), reach unless asked.
-  const asked = new URLSearchParams(search).get("view");
-  const view: ChangeView = asked === "declarations" || asked === "lines" || asked === "module" ? asked : "reach";
-  // Changes to types only are hidden unless asked for (?types=show): they don't change what runs.
-  const showTypes = new URLSearchParams(search).get("types") === "show";
-  const tabs = [
-    { view: "reach" as const, label: "Reach", href: withView({ pathname, search }, "reach") },
-    { view: "declarations" as const, label: "Full declarations that changed", href: withView({ pathname, search }, "declarations") },
-    { view: "lines" as const, label: "Line diff", href: withView({ pathname, search }, "lines") },
-    { view: "module" as const, label: "Imports & exports", href: withView({ pathname, search }, "module") },
-  ];
-
+  const { base, branch, commit, reachHref, graphHref } = loaderData;
   return (
-    <ReachProvider reach={reach}>
-      <ChangesView key={commit.sha} tree={<FileTree entries={entries} />}>
-        <ViewTabs current={view} tabs={tabs} />
-        <CommitHeader commit={commit} parentHref={(parent) => commitPath(base, branch, parent)} />
-        {view === "reach" && <ReachPanel />}
-        <ChangesBody entries={entries} view={view} showTypes={showTypes} typesHref={withTypes({ pathname, search }, !showTypes)} />
-      </ChangesView>
-    </ReachProvider>
+    <ChangesPage
+      pageKey={commit.sha}
+      title={commit.subject}
+      header={<CommitHeader commit={commit} parentHref={(parent) => commitPath(base, branch, parent)} />}
+      files={commit.files}
+      repository={base}
+      range={{ commit: commit.sha }}
+      reachHref={reachHref}
+      graphHref={graphHref}
+    />
   );
-}
-
-/** This page with type-only changes shown (`?types=show`), or hidden: the default. */
-function withTypes(location: { pathname: string; search: string }, show: boolean): string {
-  const query = new URLSearchParams(location.search);
-  if (show) query.set("types", "show");
-  else query.delete("types");
-  return query.size === 0 ? location.pathname : `${location.pathname}?${query}`;
-}
-
-/** This page in another view: reach is the default, so it isn't in the address. */
-function withView(location: { pathname: string; search: string }, view: ChangeView): string {
-  const query = new URLSearchParams(location.search);
-  if (view === "reach") query.delete("view");
-  else query.set("view", view);
-  return query.size === 0 ? location.pathname : `${location.pathname}?${query}`;
-}
-
-/** This page again, with one more file's code on it (`?open=`), scrolled to it. */
-function withOpenFile(location: { pathname: string; search: string }, path: string, id: string): string {
-  const query = new URLSearchParams(location.search);
-  query.append("open", path);
-  return `${location.pathname}?${query}#${id}`;
 }

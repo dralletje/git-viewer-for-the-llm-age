@@ -1,10 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { languageForPath, scanSource } from "@room/syntax";
+import type { Point } from "#/points.ts";
 import { computeReach, createResolver, parseJsonc, type ScannedFile } from "#/reach.ts";
 
-/** A tree of files by path: scanned, with its package.json and tsconfig.json files as configs. */
-async function reachOf(tree: Record<string, string>) {
+/** A tree of files by path: scanned, with its package.json and tsconfig.json files as configs; `points` as a .room.toml names them. */
+async function reachOf(tree: Record<string, string>, points: Array<Point> = []) {
   const configs = new Map(Object.entries(tree).filter(([path]) => /(^|\/)(package|tsconfig)\.json$/.test(path)));
   const scanned: Array<ScannedFile> = [];
   for (const [path, source] of Object.entries(tree)) {
@@ -13,7 +14,7 @@ async function reachOf(tree: Record<string, string>) {
     scanned.push({ path, ...(await scanSource(language, source)) });
   }
   const resolve = createResolver(Object.keys(tree), configs);
-  return computeReach(scanned, resolve);
+  return computeReach(scanned, resolve, points);
 }
 
 /** Each file's reach as "capability: path:line via → ...". */
@@ -157,6 +158,32 @@ test("the chain names what each import brings in", async () => {
     reach.get("app.ts")?.get("database")?.map((step) => step.name),
     ["pool", "Pool"],
   );
+});
+
+test("points: a package, a file and a declaration; each takes over what it would give, and is a wall", async () => {
+  const point = (name: string, rest: Partial<Point>): Point => ({ name, about: null, packages: [], files: [], declarations: [], ...rest });
+  const reach = await reachOf(
+    {
+      "sms/twilio.ts": 'export const send = (to: string) => fetch("https://api.twilio.com", { body: to });',
+      "db.ts": 'import { Pool } from "pg";\nexport const db = new Pool();\nexport const ping = () => fetch("/ping");',
+      "record.ts": 'import { MedplumClient } from "@medplum/core";\nexport const medplum = new MedplumClient();',
+      "notify.ts": 'import { send } from "./sms/twilio.ts";\nexport const notify = () => send("+31");',
+      "users.ts": 'import { db, ping } from "./db.ts";\nexport const users = () => db.query("select 1");\nexport const up = ping;',
+      "patient.ts": 'import { medplum } from "./record.ts";\nexport const read = () => medplum.readResource("Patient", "1");',
+    },
+    [
+      point("Medplum", { packages: ["@medplum/*"] }),
+      point("App database", { declarations: ["db.ts#db"] }),
+      point("Twilio", { files: ["sms/twilio*.ts"] }),
+    ],
+  );
+  // Twilio's own code uses fetch: it only says Twilio, and so does what uses it.
+  assert.deepEqual(show(reach, "sms/twilio.ts"), ["point:Twilio: sms/twilio.ts:1 send"]);
+  assert.deepEqual(show(reach, "notify.ts"), ["point:Twilio: notify.ts:1 ./sms/twilio.ts → sms/twilio.ts:1 send"]);
+  // The database's declaration takes over pg; ping, beside it, still reaches the network.
+  assert.deepEqual(show(reach, "users.ts"), ["point:App database: users.ts:1 ./db.ts → db.ts:2 db", "network: users.ts:1 ./db.ts → db.ts:3 fetch()"]);
+  // A package a point names gives the point, not its capability.
+  assert.deepEqual(show(reach, "patient.ts"), ["point:Medplum: patient.ts:1 ./record.ts → record.ts:1 @medplum/core"]);
 });
 
 test("CommonJS counts as a whole", async () => {

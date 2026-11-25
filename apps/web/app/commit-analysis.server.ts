@@ -1,25 +1,16 @@
 import { getCommit, type Repository } from "@room/git";
-import { analyzeFiles, type AnalyzedFile } from "#/analyze-diff.server.ts";
-import { buildFileTree, filesInTreeOrder } from "#/file-tree.ts";
-import { ignoredBy } from "#/rules.server.ts";
+import { analyzeChangedFiles, type ChangedFile } from "#/changes.server.ts";
 
 /**
- * A commit with its files analyzed, as its page shows it. Tests and stories
- * are set aside (see rules.server.ts): listed, not read.
- *
- * Which files show their code: the ones asked for (`requested`), then, in
- * the order the tree shows them, files that aren't set aside and have at
- * most 400 changed lines, until about 2000 lines are on the page. A larger
- * diff is rarely read line by line (lockfiles, generated code), and a page
- * with all of it doesn't load: the rest show their summary, one click from
- * their code.
+ * A commit with its files analyzed, as its page shows it (see
+ * `analyzeChangedFiles` for which files show their code).
  *
  * A commit never changes, so the result is kept (the last 40): opening a
  * commit that was prefetched (see `prefetchCommits`), or opened before,
  * costs nothing. Null when there is no such commit.
  */
 export type AnalyzedCommit = Omit<NonNullable<Awaited<ReturnType<typeof getCommit>>>, "files"> & {
-  files: Array<AnalyzedFile & { ignoredBy: string | null }>;
+  files: Array<ChangedFile>;
 };
 
 export function analyzeCommit(repository: Repository, sha: string, requested: Array<string>): Promise<AnalyzedCommit | null> {
@@ -36,22 +27,7 @@ export function analyzeCommit(repository: Repository, sha: string, requested: Ar
     const commit = await getCommit(repository, sha);
     if (commit === null) return null;
 
-    const ignored = new Map(commit.files.map((file) => [file.path, ignoredBy([file.path, file.oldPath ?? file.path])]));
-    const showCode = new Set<string>();
-    let budget = 2000;
-    for (const file of filesInTreeOrder(buildFileTree(commit.files, (file) => file.path))) {
-      const lines = file.additions + file.deletions;
-      if (requested.includes(file.path)) {
-        showCode.add(file.path);
-      } else if (ignored.get(file.path) === null && !file.binary && lines <= 400 && lines <= budget) {
-        showCode.add(file.path);
-        budget -= lines;
-      }
-    }
-    const skip = new Set([...ignored].filter(([path, rule]) => rule !== null && !requested.includes(path)).map(([path]) => path));
-
-    const files = await analyzeFiles(repository, commit.files, { showCode, skip });
-    return { ...commit, files: files.map((file) => ({ ...file, ignoredBy: ignored.get(file.path) ?? null })) };
+    return { ...commit, files: await analyzeChangedFiles(repository, commit.files, requested) };
   })();
 
   analyzed.set(key, result);

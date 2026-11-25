@@ -4,13 +4,16 @@ export { parseGithubRepository, validGithubRepository } from "#/github.ts";
 export type { GithubRepository } from "#/github.ts";
 export { readBlobs } from "#/read-blobs.ts";
 export {
+  branchRef,
   checkedOutBranch,
   countWorkingChanges,
+  fetchRepository,
   getComparison,
   getCommit,
   getFileDiff,
   getWorkingChanges,
   listBranches,
+  listChangedPaths,
   listContainedBranches,
   listCommits,
   openRepository,

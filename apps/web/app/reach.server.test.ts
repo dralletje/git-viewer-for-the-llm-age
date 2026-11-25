@@ -5,7 +5,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getCommit, openRepository, resolveCommit } from "@room/git";
-import { commitReach } from "#/reach.server.ts";
+import { changesReach } from "#/reach.server.ts";
 
 /** git in the test's own repository, as a fixed user: the machine may have no identity set. */
 function runGitForTest(folder: string, args: Array<string>): Promise<string> {
@@ -32,17 +32,17 @@ test("a commit that adds an import to old code: the origin isn't new, the import
     const repository = await openRepository({ kind: "local", path: folder });
     const commit = await getCommit(repository, (await resolveCommit(repository, "HEAD")) ?? "");
     assert.ok(commit !== null);
-    const reach = await commitReach(repository, commit);
+    const reach = await changesReach(repository, { head: commit.sha, base: commit.parents[0] ?? null, files: commit.files });
     assert.equal(reach.status, "scanned");
     if (reach.status !== "scanned") return;
 
     assert.equal(reach.gained.length, 1);
     const group = reach.gained[0];
-    assert.equal(group?.capability, "database");
+    assert.equal(group?.target, "database");
     assert.deepEqual(group?.origin, { path: "db.ts", line: 1, via: "pg", name: "Pool", isNew: false });
     assert.deepEqual(group?.newImports, [{ path: "app.ts", line: 1, via: "./db.ts", name: "pool" }]);
     assert.deepEqual(
-      reach.files["app.ts"]?.map((entry) => [entry.capability, entry.isNew, entry.chain.map((step) => step.isNew)]),
+      reach.files["app.ts"]?.map((entry) => [entry.target, entry.isNew, entry.chain.map((step) => step.isNew)]),
       [["database", true, [true, false]]],
     );
   } finally {

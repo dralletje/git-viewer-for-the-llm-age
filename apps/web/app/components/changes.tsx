@@ -4,7 +4,9 @@ import type { FileDiff, FileStatus } from "@room/diff";
 import type { ChangedUnit, ExportChange, ImportChange, UsedChange } from "@room/syntax";
 import type { AnalyzedDeclaration, AnalyzedFile, AnalyzedHunk, DeclarationRow, OutsideChange } from "#/analyze-diff.server.ts";
 import { inFileOrder } from "#/declaration-order.ts";
+import { MiniGraph } from "#/components/graphs.tsx";
 import { ReachChips } from "#/components/reach.tsx";
+import { nothingRuns } from "#/graphs.ts";
 import { buildFileTree, filesInTreeOrder, type FileTreeNode } from "#/file-tree.ts";
 
 /** One changed file on a commit or comparison page. */
@@ -27,9 +29,27 @@ export type ChangeEntry = {
  * - module: the line diff, with each file's imports and exports summed up.
  * - reach: declarations, with what the repository's files can reach outside
  *   the program (network, database, ...): what the commit adds, and each
- *   file's reach beside its name. The commit page only.
+ *   file's reach beside its name.
+ * - combined ("Ripple"), flow: a graph of declarations above the
+ *   declarations (see graphs.ts): what the changes spread to through the
+ *   repository and the uses they added or removed, in a box per app or
+ *   package; the chains to new reach.
+ * - folded, bundled, zoom: combined, three more ways to read a big ripple
+ *   without leaving anything out: far files folded, one line per file,
+ *   detail by zoom. Every one of them (combined too) focuses a clicked
+ *   declaration: all but the paths through it fade.
+ * - neighbors: declarations, each header a small graph of what it uses that
+ *   changed and what uses it.
+ * - calls: what the changed code uses, which may now be called differently.
+ * - points: what matters in the repository (its `.room.toml`, then the
+ *   capabilities), and the changed code that reaches each.
  */
-export type ChangeView = "declarations" | "lines" | "module" | "reach";
+export type ChangeView = "declarations" | "lines" | "module" | "reach" | "combined" | "folded" | "bundled" | "zoom" | "flow" | "neighbors" | "calls" | "points";
+
+/** The views that show each file as its declarations. */
+function byDeclarations(view: ChangeView): boolean {
+  return view !== "lines" && view !== "module";
+}
 
 /** The tabs: links to this page in another view (`?view=`), so a view can be shared and reloaded. */
 export function ViewTabs({
@@ -40,7 +60,7 @@ export function ViewTabs({
   tabs: Array<{ view: ChangeView; label: string; href: string; experimental?: boolean }>;
 }) {
   return (
-    <nav className="mb-4 flex gap-1 border-b border-neutral-200 text-sm dark:border-neutral-800">
+    <nav className="mb-4 flex flex-wrap gap-1 border-b border-neutral-200 text-sm dark:border-neutral-800">
       {tabs.map((tab) => (
         <Link
           key={tab.view}
@@ -68,6 +88,8 @@ export function ViewTabs({
 export function ChangesView({ tree, children }: { tree: ReactNode; children: ReactNode }) {
   const treeColumn = useRef<HTMLElement>(null);
   const codeColumn = useRef<HTMLDivElement>(null);
+  // While a declaration is focused in the graph: how many files are left, and a way back to all.
+  const [focused, setFocused] = useState<{ shown: number; of: number } | null>(null);
 
   // Jumping to a file and following which file is being read. Straight on
   // the page: marking the file through React state would render the tree
@@ -100,9 +122,12 @@ export function ChangesView({ tree, children }: { tree: ReactNode; children: Rea
     };
 
     // The file under a line just below the top of the code; above the first
-    // file (the header), the first file in view.
+    // file (the header), the first file in view. With a graph stuck to the
+    // top (Ripple + import map), the files' part starts below it.
     const fileBeingRead = (): string | null => {
-      const view = code.getBoundingClientRect();
+      const whole = code.getBoundingClientRect();
+      const graphBottom = code.querySelector("[data-sticky-graph]")?.getBoundingClientRect().bottom;
+      const view = { top: graphBottom ?? whole.top, bottom: whole.bottom, height: whole.bottom - (graphBottom ?? whole.top) };
       if (jumpedTo !== null) {
         const box = document.getElementById(jumpedTo)?.getBoundingClientRect();
         if (box !== undefined && box.height > 0 && box.top < view.top + view.height / 2 && box.bottom > view.top) return jumpedTo;
@@ -110,7 +135,7 @@ export function ChangesView({ tree, children }: { tree: ReactNode; children: Rea
       }
       const line = view.top + 48;
       let found: string | null = null;
-      for (const element of code.querySelectorAll("details[id^='file-']")) {
+      for (const element of code.querySelectorAll("details[data-file]")) {
         const box = element.getBoundingClientRect();
         // A file in a folded group of set-aside files.
         if (box.height === 0) continue;
@@ -124,44 +149,137 @@ export function ChangesView({ tree, children }: { tree: ReactNode; children: Rea
       return found;
     };
 
-    // Opens the file, and the group it's folded into, and puts it at the top.
+    // Opens the file (or a declaration in it: `file-3--name`, see
+    // DeclarationsView), and the group it's folded into, and puts it at the
+    // top. A declaration that isn't on the page: its file.
     const jumpTo = (id: string) => {
-      const target = document.getElementById(id);
+      const target = document.getElementById(id) ?? document.getElementById(id.split("--")[0] ?? "");
       if (target === null) return;
       for (let element: HTMLElement | null = target; element !== null; element = element.parentElement) {
         if (element instanceof HTMLDetailsElement) element.open = true;
       }
       target.scrollIntoView({ block: "start" });
-      jumpedTo = id;
-      markFile(id);
+      const file = target.closest("details[data-file]")?.id ?? null;
+      jumpedTo = file;
+      markFile(file);
+    };
+
+    // A link to the file or declaration the address already points at (a
+    // graph's node clicked twice): no hashchange, so jump here.
+    const onClick = (event: MouseEvent) => {
+      const link = event.target instanceof Element ? event.target.closest("a[href^='#file-']") : null;
+      if (link === null || link.getAttribute("href") !== window.location.hash) return;
+      event.preventDefault();
+      jumpTo(decodeURIComponent(window.location.hash.slice(1)));
+    };
+
+    // With a graph stuck above the code: which declaration is being read,
+    // for the graph to mark (see GraphCanvas). A window event: the graph is
+    // drawn elsewhere on the page, and only needs the id.
+    let reading: string | null = null;
+    const markDeclaration = () => {
+      const graph = code.querySelector("[data-sticky-graph]");
+      if (graph === null) return;
+      // Just below the graph and the file's sticky header.
+      const line = graph.getBoundingClientRect().bottom + 72;
+      let found: string | null = null;
+      for (const element of code.querySelectorAll("details[data-file] details[id]")) {
+        const box = element.getBoundingClientRect();
+        if (box.height === 0) continue;
+        if (box.top <= line && box.bottom > line) {
+          found = element.id;
+          break;
+        }
+      }
+      if (found === reading) return;
+      reading = found;
+      window.dispatchEvent(new CustomEvent("room:reading", { detail: { id: found } }));
     };
 
     const onScroll = () => {
       cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => markFile(fileBeingRead()));
+      frame = requestAnimationFrame(() => {
+        markFile(fileBeingRead());
+        markDeclaration();
+      });
     };
 
     // An address with #file-…: a file chosen in the tree, a shared link,
     // back/forward.
     const onHashChange = () => jumpTo(decodeURIComponent(window.location.hash.slice(1)));
 
+    // A declaration focused in the graph (see GraphCanvas): the files its
+    // paths go through stay; the rest are hidden below it and dimmed in the
+    // tree. Straight on the page, as the marks above: the files are heavy.
+    const onFocus = (event: Event) => {
+      const files = (event as CustomEvent<{ files: Array<string> | null }>).detail.files;
+      const keep = files === null ? null : new Set(files);
+      for (const element of code.querySelectorAll("details[data-file]")) element.toggleAttribute("data-unfocused", keep !== null && !keep.has(element.id));
+      for (const link of tree.querySelectorAll("a[href^='#file-']")) {
+        link.toggleAttribute("data-unfocused", keep !== null && !keep.has(link.getAttribute("href")?.slice(1) ?? ""));
+      }
+      // Counted as the tree's header counts: the files to review, the set-aside ones not.
+      const reviewed = [...code.querySelectorAll("details[data-file]:not([data-set-aside])")].map((element) => element.id);
+      setFocused(keep === null ? null : { shown: reviewed.filter((id) => keep.has(id)).length, of: reviewed.length });
+    };
+    // Choosing a file in the tree ends the focus: every file is back, and so is the whole graph.
+    const onTreeClick = (event: MouseEvent) => {
+      if (!(event.target instanceof Element) || event.target.closest("a[href^='#file-']") === null) return;
+      if (code.querySelector("[data-unfocused]") === null) return;
+      onFocus(new CustomEvent("room:focus", { detail: { files: null } }));
+      window.dispatchEvent(new CustomEvent("room:focus-clear"));
+    };
+
     if (window.location.hash.startsWith("#file-")) onHashChange();
     else markFile(fileBeingRead());
     code.addEventListener("scroll", onScroll, { passive: true });
+    code.addEventListener("click", onClick);
+    tree.addEventListener("click", onTreeClick);
     window.addEventListener("hashchange", onHashChange);
+    window.addEventListener("room:focus", onFocus);
     return () => {
       cancelAnimationFrame(frame);
       code.removeEventListener("scroll", onScroll);
+      code.removeEventListener("click", onClick);
+      tree.removeEventListener("click", onTreeClick);
       window.removeEventListener("hashchange", onHashChange);
+      window.removeEventListener("room:focus", onFocus);
     };
   }, []);
 
   return (
     <div className="flex h-full w-screen shrink-0 snap-end">
       <nav ref={treeColumn} className="w-72 shrink-0 overflow-y-auto border-r border-neutral-200 dark:border-neutral-800">
+        {focused !== null && (
+          <div className="flex items-center gap-2 border-b border-blue-200 bg-blue-50 px-4 py-1.5 text-xs text-blue-900 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-200">
+            <span>
+              Focused: {focused.shown} of {focused.of} files
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                window.dispatchEvent(new CustomEvent("room:focus-clear"));
+                window.dispatchEvent(new CustomEvent("room:focus", { detail: { files: null } }));
+              }}
+              className="ml-auto rounded border border-blue-300 px-1.5 py-0.5 hover:bg-blue-100 dark:border-blue-800 dark:hover:bg-blue-900"
+            >
+              Show all
+            </button>
+          </div>
+        )}
         {tree}
       </nav>
-      <div ref={codeColumn} className="min-w-0 flex-1 overflow-y-auto p-6">
+      <div
+        ref={codeColumn}
+        // With a graph stuck to the top (Ripple), its height is --files-top
+        // here (set by GraphFrame): a file's header sticks below it, and a
+        // jump puts a file there.
+        // overscroll-x-contain: a touchpad's swipe up or down is never quite
+        // vertical, and this column can't scroll sideways, so the sideways
+        // part went on to the branches | commits | code strip around it,
+        // which then snapped to the commits. A swipe here stays here.
+        className="min-w-0 flex-1 overflow-y-auto overscroll-x-contain p-6"
+      >
         {children}
       </div>
     </div>
@@ -245,7 +363,7 @@ function FileTreeNodes({ nodes, depth }: { nodes: Array<FileTreeNode<ChangeEntry
               href={`#${node.file.id}`}
               title={node.path}
               style={indent}
-              className="flex items-center gap-1.5 py-0.5 pr-3 hover:bg-neutral-100 data-[current]:bg-sky-100 data-[current]:font-semibold dark:hover:bg-neutral-900 dark:data-[current]:bg-sky-950"
+              className="flex items-center gap-1.5 py-0.5 pr-3 hover:bg-neutral-100 data-[current]:bg-sky-100 data-[current]:font-semibold data-[unfocused]:opacity-35 dark:hover:bg-neutral-900 dark:data-[current]:bg-sky-950"
             >
               <StatusBadge status={node.file.file.status} />
               <span className="min-w-0 flex-1 truncate font-mono text-xs">{node.name}</span>
@@ -263,24 +381,12 @@ function FileTreeNodes({ nodes, depth }: { nodes: Array<FileTreeNode<ChangeEntry
  * then each rule's set-aside files, folded into one line that opens to
  * their headers.
  */
-export const ChangesBody = memo(function ChangesBody({
-  entries,
-  view,
-  showTypes,
-  typesHref,
-}: {
-  entries: Array<ChangeEntry>;
-  view: ChangeView;
-  /** Show declarations whose only change is in types (`?types=show`); hidden by default: types don't change what runs. */
-  showTypes: boolean;
-  /** This page with them shown, or hidden again. */
-  typesHref: string;
-}) {
+export const ChangesBody = memo(function ChangesBody({ entries, view }: { entries: Array<ChangeEntry>; view: ChangeView }) {
   const reviewed = entries.filter((entry) => entry.file.ignoredBy === null);
   return (
     <div className="mt-6 flex flex-col gap-4">
       {filesInTreeOrder(buildFileTree(reviewed, (entry) => entry.file.path)).map((entry) => (
-        <FileDiffView key={entry.id} entry={entry} view={view} showTypes={showTypes} typesHref={typesHref} />
+        <FileDiffView key={entry.id} entry={entry} view={view} />
       ))}
       {ignoredGroups(entries).map((group) => (
         <details
@@ -299,7 +405,7 @@ export const ChangesBody = memo(function ChangesBody({
           </summary>
           <div className="flex flex-col gap-2 p-2">
             {filesInTreeOrder(buildFileTree(group.entries, (entry) => entry.file.path)).map((entry) => (
-              <FileDiffView key={entry.id} entry={entry} view={view} showTypes={showTypes} typesHref={typesHref} />
+              <FileDiffView key={entry.id} entry={entry} view={view} />
             ))}
           </div>
         </details>
@@ -347,21 +453,12 @@ function FilePath({ file }: { file: FileDiff }) {
 
 /**
  * A <details>, so opening and closing a file works without JavaScript.
- * Closed, it shows the file's imports and exports. A file whose code isn't
+ * Closed, it shows the file's imports and exports. On Reach, a file without
+ * declarations (text, JSON, config) starts closed. A file whose code isn't
  * on the page fetches it when opened; without JavaScript, its "Show
  * changes" link loads the page again with it.
  */
-export const FileDiffView = memo(function FileDiffView({
-  entry,
-  view,
-  showTypes,
-  typesHref,
-}: {
-  entry: ChangeEntry;
-  view: ChangeView;
-  showTypes: boolean;
-  typesHref: string;
-}) {
+export const FileDiffView = memo(function FileDiffView({ entry, view }: { entry: ChangeEntry; view: ChangeView }) {
   const fetcher = useFetcher<{ file: AnalyzedFile }>();
   const file: AnalyzedFile = fetcher.data?.file ?? entry.file;
   const loading = fetcher.state !== "idle";
@@ -369,13 +466,20 @@ export const FileDiffView = memo(function FileDiffView({
   return (
     <details
       id={entry.id}
-      open={!entry.file.codeOmitted}
+      // A file, not one of its declarations (whose ids start alike): what the tree follows.
+      data-file=""
+      // A test, story or what the .room.toml sets aside: not counted among the files to review.
+      data-set-aside={entry.file.ignoredBy === null ? undefined : ""}
+      // Reach is for reading code: a file with no declarations (text, JSON,
+      // config) starts closed there, or its whole line diff fills the page.
+      open={!entry.file.codeOmitted && !(view === "reach" && entry.file.declarations === null)}
       onToggle={(event) => {
         if (event.currentTarget.open && file.codeOmitted && !file.binary && !loading) fetcher.load(entry.codeHref);
       }}
-      className="group scroll-mt-4 rounded-md border border-neutral-200 [contain-intrinsic-size:auto_240px] [content-visibility:auto] dark:border-neutral-800"
+      // data-unfocused: not on the paths of the declaration focused in the graph (see ChangesView).
+      className="group scroll-mt-[calc(var(--files-top,0px)+1rem)] data-[unfocused]:hidden rounded-md border border-neutral-200 [contain-intrinsic-size:auto_240px] [content-visibility:auto] dark:border-neutral-800"
     >
-      <summary className="sticky top-0 z-10 block cursor-pointer rounded-t-md border-b border-neutral-200 bg-neutral-50 px-4 py-2 dark:border-neutral-800 dark:bg-neutral-900">
+      <summary className="sticky top-[var(--files-top,0px)] z-10 block cursor-pointer rounded-t-md border-b border-neutral-200 bg-neutral-50 px-4 py-2 dark:border-neutral-800 dark:bg-neutral-900">
         <div className="flex items-center gap-2">
           <StatusBadge status={file.status} />
           <FilePath file={file} />
@@ -389,10 +493,10 @@ export const FileDiffView = memo(function FileDiffView({
             <Counts additions={file.additions} deletions={file.deletions} />
           </span>
         </div>
-        {(view === "declarations" || view === "reach") && file.declarations !== null && (
+        {byDeclarations(view) && file.declarations !== null && (
           <div className="mt-2 flex gap-2 group-open:hidden">
             <span className="w-14 shrink-0 pt-0.5 text-xs text-neutral-500">changed</span>
-            <DeclarationChips declarations={file.declarations.filter((declaration) => showTypes || !onlyTypes(declaration))} />
+            <DeclarationChips declarations={file.declarations.filter((declaration) => !nothingRuns(declaration))} />
           </div>
         )}
         {view === "module" && file.imports !== null && (
@@ -433,8 +537,17 @@ export const FileDiffView = memo(function FileDiffView({
         </p>
       ) : file.hunks.length === 0 ? (
         <p className="px-4 py-3 text-sm text-neutral-500">No changes to the contents.</p>
-      ) : (view === "declarations" || view === "reach") && file.declarations !== null ? (
-        <DeclarationsView file={file} declarations={file.declarations} showTypes={showTypes} typesHref={typesHref} />
+      ) : byDeclarations(view) && file.declarations !== null ? (
+        <DeclarationsView
+          fileId={entry.id}
+          file={file}
+          declarations={file.declarations}
+          // Ripple + import map is read declaration by declaration from the graph: all open.
+          openAll={view === "combined" || view === "folded" || view === "bundled" || view === "zoom"}
+          // The other views are read for what the code does: no list of what didn't change.
+          listUnchanged={view === "declarations"}
+          neighbors={view === "neighbors"}
+        />
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full border-collapse font-mono text-xs leading-5">
@@ -454,6 +567,7 @@ const declarationStyle: Record<AnalyzedDeclaration["status"], { word: string; cl
   changed: { word: "changed", className: "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-200" },
   affected: { word: "affected", className: "border-sky-300 bg-sky-50 text-sky-900 dark:border-sky-800 dark:bg-sky-950/50 dark:text-sky-200" },
   types: { word: "types", className: "border-dashed border-indigo-300 text-indigo-800 dark:border-indigo-700 dark:text-indigo-300" },
+  comments: { word: "comments", className: "border-dashed border-neutral-300 text-neutral-600 dark:border-neutral-700 dark:text-neutral-400" },
   formatting: { word: "formatting", className: "border-dashed border-neutral-300 text-neutral-500 dark:border-neutral-700" },
   unchanged: { word: "unchanged", className: "border-neutral-200 text-neutral-600 dark:border-neutral-700 dark:text-neutral-400" },
 };
@@ -475,35 +589,34 @@ function DeclarationChips({ declarations }: { declarations: Array<AnalyzedDeclar
 }
 
 /**
- * A declaration whose change is only to types: it's only a type (an
- * interface, a type alias, ...), or only its types changed. Nothing that
- * runs is different, so it's hidden unless asked for.
- */
-function onlyTypes(declaration: AnalyzedDeclaration): boolean {
-  return declaration.status === "types" || (declaration.typeOnly && declaration.status !== "unchanged");
-}
-
-/**
  * The file as its top-level declarations: each one that changed, or whose
  * code is the same but uses code that changed ("affected"), closed by
  * default under a header that says what changed in it and what it uses that
- * changed; opened, its whole code old beside new. Ones whose change is only
- * to types are named on one line, unless `showTypes`; the unchanged ones too.
+ * changed; opened, its whole code old beside new. Only what runs counts:
+ * ones whose change is only to types, comments or formatting aren't shown,
+ * nor comments outside the declarations. With `listUnchanged`, the
+ * unchanged ones are named on one line. With `neighbors`, each header is a
+ * small graph: what it uses that changed, it, and what uses it. With
+ * `openAll`, every declaration starts open. Each declaration's id is
+ * `<file's id>--<its name>`: a graph's node links there.
  */
 function DeclarationsView({
+  fileId,
   file,
   declarations,
-  showTypes,
-  typesHref,
+  listUnchanged,
+  neighbors,
+  openAll,
 }: {
+  fileId: string;
   file: AnalyzedFile;
   declarations: Array<AnalyzedDeclaration>;
-  showTypes: boolean;
-  typesHref: string;
+  listUnchanged: boolean;
+  neighbors: boolean;
+  openAll: boolean;
 }) {
   const unchanged = declarations.filter((declaration) => declaration.status === "unchanged");
-  const types = declarations.filter(onlyTypes);
-  const hidden = (declaration: AnalyzedDeclaration) => declaration.status === "unchanged" || (!showTypes && onlyTypes(declaration));
+  const hidden = (declaration: AnalyzedDeclaration) => declaration.status === "unchanged" || nothingRuns(declaration);
 
   // The changed lines outside the declarations, each run where it is in the file.
   const items = inFileOrder(declarations, file.outside ?? []);
@@ -512,6 +625,7 @@ function DeclarationsView({
     <div>
       {items.map((item, index) =>
         "outside" in item ? (
+          item.outside.kind === "comment" ? null : (
           <details key={index} className="group/declaration border-b border-neutral-200 dark:border-neutral-800">
             <summary className="flex cursor-pointer list-none gap-2 px-4 py-3 text-xs hover:bg-neutral-50 dark:hover:bg-neutral-900/60">
               <span className="w-3 shrink-0 select-none pt-0.5 text-neutral-400 transition-transform group-open/declaration:rotate-90">▸</span>
@@ -523,39 +637,35 @@ function DeclarationsView({
               <DeclarationRows rows={item.outside.rows} sides={["left", "right"]} tokenKinds={file.tokenKinds} />
             )}
           </details>
+          )
         ) : hidden(item.declaration) ? null : (
-          <details key={index} className="group/declaration border-b border-neutral-200 dark:border-neutral-800">
+          <details
+            key={index}
+            id={`${fileId}--${item.declaration.label}`}
+            open={openAll || undefined}
+            // Below the sticky graph (if any) and the file's own sticky header.
+            className="group/declaration scroll-mt-[calc(var(--files-top,0px)+4rem)] border-b border-neutral-200 dark:border-neutral-800"
+          >
             <summary className="flex cursor-pointer list-none gap-2 px-4 py-3 text-xs hover:bg-neutral-50 dark:hover:bg-neutral-900/60">
               <span className="w-3 shrink-0 select-none pt-0.5 text-neutral-400 transition-transform group-open/declaration:rotate-90">▸</span>
               <span className="min-w-0 flex-1">
-                <span className="block">
-                  <DeclarationTitle declaration={item.declaration} />
-                </span>
-                <DeclarationSummary declaration={item.declaration} />
+                {neighbors ? (
+                  <MiniGraph file={file} declaration={item.declaration} title={<DeclarationTitle declaration={item.declaration} />} />
+                ) : (
+                  <>
+                    <span className="block">
+                      <DeclarationTitle declaration={item.declaration} />
+                    </span>
+                    <DeclarationSummary declaration={item.declaration} />
+                  </>
+                )}
               </span>
             </summary>
             <DeclarationRows rows={item.declaration.rows ?? []} sides={sidesOf(item.declaration)} tokenKinds={file.tokenKinds} />
           </details>
         ),
       )}
-      {types.length > 0 && (
-        <p className="border-b border-neutral-200 px-4 py-2 text-xs text-neutral-500 dark:border-neutral-800">
-          {showTypes ? (
-            <>
-              {types.length} with only type changes shown above.{" "}
-            </>
-          ) : (
-            <>
-              {types.length} with only type changes, hidden (nothing that runs changed):{" "}
-              <span className="font-mono">{types.map((declaration) => declaration.label).join(", ")}</span>.{" "}
-            </>
-          )}
-          <Link to={typesHref} preventScrollReset className="text-blue-700 underline dark:text-blue-400">
-            {showTypes ? "Hide type changes" : "Show type changes"}
-          </Link>
-        </p>
-      )}
-      {unchanged.length > 0 && (
+      {listUnchanged && unchanged.length > 0 && (
         <p className="px-4 py-2 font-mono text-xs text-neutral-500">
           <span className="font-sans">{unchanged.length} unchanged:</span> {unchanged.map((declaration) => declaration.label).join(", ")}
         </p>
@@ -639,8 +749,10 @@ function DeclarationSummary({ declaration }: { declaration: AnalyzedDeclaration 
           ? declaration.typeOnly
             ? "a type that changed: nothing that runs did"
             : "only its types changed: nothing that runs did"
-          : declaration.status === "formatting"
-            ? "only formatting or comments changed"
+          : declaration.status === "comments"
+            ? "only its comments changed: nothing that runs did"
+            : declaration.status === "formatting"
+            ? "only formatting changed: nothing that runs did"
             : declaration.typeOnly
               ? "a type: nothing that runs"
               : null;

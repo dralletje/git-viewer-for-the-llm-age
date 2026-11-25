@@ -15,9 +15,10 @@ export type DeclarationChange = {
    * - changed: its code changed.
    * - affected: its code didn't, but top-level code it uses (at runtime) did (see `via`).
    * - types: only its types did (annotations, casts, generics; or it's only a type, see `typeOnly`).
-   * - formatting: only whitespace, comments, semicolons or trailing commas did.
+   * - comments: only its comments did (and maybe its formatting).
+   * - formatting: only whitespace, semicolons or trailing commas did.
    */
-  status: "added" | "removed" | "changed" | "affected" | "types" | "formatting" | "unchanged";
+  status: "added" | "removed" | "changed" | "affected" | "types" | "comments" | "formatting" | "unchanged";
   /** It's only a type (an interface, a type alias, ...): gone after compiling. */
   typeOnly: boolean;
   before: LineRange | null;
@@ -124,9 +125,11 @@ export function compareDeclarations(before: TopLevel, after: TopLevel, oldLines:
           ? "affected"
           : previous.fingerprint !== unit.fingerprint
             ? "types"
-            : text(oldLines, previous) !== text(newLines, unit)
-              ? "formatting"
-              : "unchanged";
+            : previous.comments !== unit.comments
+              ? "comments"
+              : text(oldLines, previous) !== text(newLines, unit)
+                ? "formatting"
+                : "unchanged";
     const via = status === "affected" && path !== null ? path.map((index) => after.units[index]?.label ?? "") : [];
     return { label: label(newLines, unit), kind, exported: newExported.has(unit.key), status, typeOnly, before: range(previous), after: range(unit), via, uses };
   });

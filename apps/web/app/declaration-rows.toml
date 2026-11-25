@@ -1,0 +1,104 @@
+# The rows of a changed declaration, as its header opens to: only what runs
+# counts. `input` is the file before and after; `output` is each row of the
+# first changed declaration: "  text" for a line that didn't change (its new
+# text), "- text" and "+ text" for a changed one, each side of a pair.
+
+name = "declaration rows"
+
+[[suites]]
+name = "comments and formatting aren't changes"
+
+[[suites.tests]]
+name = "a changed comment line in a changed function is the same line"
+input.before = """
+function price(amount) {
+  // in cents
+  return amount * 2;
+}
+"""
+input.after = """
+function price(amount) {
+  // in euros
+  return amount * 3;
+}
+"""
+output = [
+  "  function price(amount) {",
+  "  // in euros",
+  "- return amount * 2;",
+  "+ return amount * 3;",
+  "  }",
+]
+
+[[suites.tests]]
+name = "an added comment shows as unchanged, a removed one not at all"
+input.before = """
+function price(amount) {
+  // old note
+  const base = amount;
+  return base * 2;
+}
+"""
+input.after = """
+function price(amount) {
+  const base = amount;
+  // new note
+  return base * 3;
+}
+"""
+output = [
+  "  function price(amount) {",
+  "  const base = amount;",
+  "  // new note",
+  "- return base * 2;",
+  "+ return base * 3;",
+  "  }",
+]
+
+[[suites.tests]]
+name = "a line whose trailing comment, spacing or semicolon changed is the same"
+input.before = """
+function f(a) {
+  const b = a + 1; // one
+  const c = b*2
+  return c;
+}
+"""
+input.after = """
+function f(a) {
+  const b = a + 1; // plus one
+  const c = b * 2;
+  return c + 1;
+}
+"""
+output = [
+  "  function f(a) {",
+  "  const b = a + 1; // plus one",
+  "  const c = b * 2;",
+  "- return c;",
+  "+ return c + 1;",
+  "  }",
+]
+
+[[suites.tests]]
+name = "a changed space inside a string is a change"
+input.before = """
+function f() {
+  log("a b");
+  return 1;
+}
+"""
+input.after = """
+function f() {
+  log("a  b");
+  return 2;
+}
+"""
+output = [
+  "  function f() {",
+  "- log(\"a b\");",
+  "+ log(\"a  b\");",
+  "- return 1;",
+  "+ return 2;",
+  "  }",
+]

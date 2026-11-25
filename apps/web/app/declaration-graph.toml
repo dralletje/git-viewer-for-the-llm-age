@@ -1,0 +1,97 @@
+# declarationGraph: every declaration of a repository, and what each one's
+# code uses when it runs. `input` is the repository's files; `output` lists
+# every use, sorted, as "file declaration -> file declaration" (or "->
+# outside" for a package or global).
+
+name = "declarationGraph"
+
+[[suites]]
+name = "uses across files"
+
+[[suites.tests]]
+name = "an imported function is the declaration in the other file"
+input."a.ts" = """
+import { b } from "./b.ts";
+export function a() {
+  return b();
+}
+"""
+input."b.ts" = """
+export function b() {
+  return 1;
+}
+export function unused() {}
+"""
+output = ["a.ts a -> b.ts b"]
+
+[[suites.tests]]
+name = "through a barrel's re-exports, to the code that has it"
+input."a.ts" = """
+import { c } from "./index.ts";
+export const a = () => c;
+"""
+input."index.ts" = """
+export { c } from "./c.ts";
+export * from "./d.ts";
+"""
+input."c.ts" = """
+export const c = 1;
+"""
+input."d.ts" = """
+export const d = 2;
+"""
+output = ["a.ts a -> c.ts c"]
+
+[[suites.tests]]
+name = "in its own file too, and a package and a global that gives a capability"
+input."a.ts" = """
+import { Pool } from "pg";
+const url = process.env.DATABASE_URL;
+export function connect() {
+  return new Pool({ connectionString: url });
+}
+export async function ping() {
+  return fetch("https://example.com");
+}
+"""
+output = [
+  "a.ts connect -> a.ts url",
+  "a.ts connect -> outside pg { Pool }",
+  "a.ts ping -> outside fetch()",
+  "a.ts url -> outside process.env",
+]
+
+[[suites.tests]]
+name = "an import of only types, and a use only in a type, aren't uses"
+input."a.ts" = """
+import type { B } from "./b.ts";
+import { type C, make } from "./b.ts";
+export function a(input: B): C {
+  return make(input);
+}
+"""
+input."b.ts" = """
+export type B = string;
+export type C = number;
+export function make(input: string) {
+  return input.length;
+}
+"""
+output = ["a.ts a -> b.ts make"]
+
+[[suites.tests]]
+name = "import * as uses every exported declaration (coarse)"
+input."a.ts" = """
+import * as math from "./math.ts";
+export const a = () => math.add(1, 2);
+"""
+input."math.ts" = """
+export function add(a: number, b: number) {
+  return a + b;
+}
+export function sub(a: number, b: number) {
+  return a - b;
+}
+function hidden() {}
+"""
+output = ["a.ts a -> math.ts add", "a.ts a -> math.ts sub"]

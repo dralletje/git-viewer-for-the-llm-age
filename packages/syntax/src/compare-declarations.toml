@@ -236,6 +236,81 @@ output = [
 ]
 
 [[suites]]
+name = "comments don't change what runs"
+
+[[suites.tests]]
+name = "a changed comment inside, or right above, is a comments change"
+input.before = """
+// Adds one.
+function inc(a) {
+  // the step
+  return a + 1;
+}
+function dec(a) {
+  return a - 1;
+}
+"""
+input.after = """
+// Adds one to a.
+function inc(a) {
+  // the step
+  return a + 1;
+}
+function dec(a) {
+  /* one less */
+  return a - 1;
+}
+"""
+output = [
+  { status = "comments", label = "inc" },
+  { status = "comments", label = "dec" },
+]
+
+[[suites.tests]]
+name = "re-indenting a comment is formatting"
+input.before = """
+function f() {
+  /* a
+     b */
+  return 1;
+}
+"""
+input.after = """
+function f() {
+    /* a
+       b */
+    return 1;
+}
+"""
+output = [{ status = "formatting", label = "f" }]
+
+[[suites.tests]]
+name = "a comment change next to a code change is a code change"
+input.before = """
+// one
+const a = 1;
+"""
+input.after = """
+// two
+const a = 2;
+"""
+output = [{ status = "changed", label = "a" }]
+
+[[suites.tests]]
+name = "a comment with a blank line under it belongs to no declaration"
+input.before = """
+// old header
+
+const a = 1;
+"""
+input.after = """
+// new header
+
+const a = 1;
+"""
+output = [{ status = "unchanged", label = "a" }]
+
+[[suites]]
 name = "blank lines"
 
 [[suites.tests]]
