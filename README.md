@@ -5,10 +5,10 @@ answers out through a slot, without understanding a word. An LLM writing code
 is that room. This is for the person outside: reading what came out, closely
 enough to tell what it means.
 
-A git diff and commit viewer built for reading code an LLM wrote. Today it's
-just a plain viewer: point it at a GitHub repository and read its branches,
-commits and diffs, or at a repository on this machine (`~/repos/project`, any
-path inside one, or a bare repository). That's the base for the ideas this project is really about:
+A git diff and commit viewer built for reading code an LLM wrote. Point it at
+a GitHub repository, or at one on this machine (`~/repos/project`, any path
+inside one, or a bare repository), and read its branches, commits and diffs.
+On top of that it does what this project is really about:
 
 - rules that hide or fold files you don't need to read (lockfiles, snapshots, generated code)
 - AST-aware views: which functions, variables and exports a change really adds
@@ -28,9 +28,28 @@ capability is in `apps/web/app/capabilities.ts`, the following in
 `apps/web/app/reach.ts`; `@room/syntax` provides what the code says
 (imports, globals, scopes, the module graph).
 
+Only code that runs counts: a change to types, comments or formatting is
+left out of Reach, the declarations and the graph.
+
+**Ripple** (a tab) draws what the changes spread to: each changed
+declaration, and everything that uses it, through the whole repository. It
+also shows the uses a change added or removed. Each file is a box inside
+its app's or package's box, and uses from one app into another are drawn
+thicker. The graph sticks above the code, and you can drag, scroll and zoom
+it. Clicking a declaration shows only the paths through it, and only their
+files below. Scrolling the code marks the declaration you're reading.
+
 Tests and stories are set aside by the rules in
 `apps/web/app/rules.server.ts` (written from mimas's conventions): they stay
 listed, folded into one line per rule, and are only read when opened.
+
+A repository can describe itself in a `.room.toml` at its root:
+
+- **points:** what matters in it (Medplum, the database, an SMS provider),
+  by package, file or declaration. Reach and Ripple show them first.
+- **ignore:** more files to set aside.
+
+The format is in [AGENTS.md](AGENTS.md).
 
 ## Use
 
@@ -78,6 +97,7 @@ no build step and export their `.ts` source.
 | `packages/diff` (`@room/diff`) | Parses git's unified diff into files, hunks and lines. Every later view works on this model, never on diff text. |
 | `packages/git` (`@room/git`) | Talks to `git`: clones a GitHub repository (bare, blobs on demand) into `~/.cache/behind-the-room/repos` (or `$ROOM_CACHE`), lists branches and commits, and returns a commit with its parsed diff. |
 | `packages/syntax` (`@room/syntax`) | tree-sitter (WASM) for TS, TSX and JS: parses a whole file once and returns its highlighted lines, imports and exports; scans a file for a whole-repository pass (`scanSource`: its uses of globals, with scopes, and its module graph); compares two versions' imports per module, and exports per name through the file's top level as a graph: an export is "changed" when its own code changed (formatting aside), "affected" when top-level code it uses did (with the path), and changes no export reaches are listed. |
+| `packages/canvas` (`@room/canvas`) | A pan and zoom canvas for the graph: drag, scroll, pinch, fit. No framework. |
 | `apps/web` (`@room/web`) | React Router 8 in framework mode. `route.tsx` holds the decisions; `components.tsx` next to it holds the markup and styling. |
 
 The app clones over HTTPS with whatever git credentials the machine has, so
