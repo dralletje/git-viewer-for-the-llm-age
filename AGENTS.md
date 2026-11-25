@@ -79,6 +79,11 @@ A commit, a comparison or the work tree's current changes all render
    - `room:focus-clear`: sent when a file is picked in the tree.
    The code column's scrolling and jumping (`#file-3`, `#file-3--name` for a
    declaration) is in `ChangesView` in `components/changes.tsx`.
+5. Many declarations the graph draws are in files that didn't change.
+   `UnchangedDeclarations` lists them under the changed files
+   (`#unchanged-3--name`, from `unchangedFiles` in `graphs.ts`). Each one's
+   code is fetched when it's opened, from `routes/$owner.$repo.declaration`.
+   That route returns its lines at the head, highlighted.
 
 ## A repository's `.room.toml`
 

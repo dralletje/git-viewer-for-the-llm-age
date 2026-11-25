@@ -5,7 +5,7 @@ import { rippleInFolders, type ScannedGraph } from "#/graphs.ts";
 /** Changes graph data with one changed declaration in each of these files, and these packages. */
 function changedIn(paths: Array<string>, packages: Array<string>): ScannedGraph {
   const declarations: ScannedGraph["declarations"] = {};
-  for (const path of paths) declarations[`${path}\0run`] = { id: `${path}\0run`, path, label: "run", line: 1, status: "changed", tag: null, exported: true };
+  for (const path of paths) declarations[`${path}\0run`] = { id: `${path}\0run`, path, label: "run", line: 1, endLine: 3, status: "changed", tag: null, exported: true };
   return {
     status: "scanned",
     declarations,

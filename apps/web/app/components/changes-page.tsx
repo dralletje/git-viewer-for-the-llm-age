@@ -1,7 +1,7 @@
 import { useMemo, type ReactNode } from "react";
 import { useLocation } from "react-router";
 import type { ChangedFile } from "#/changes.server.ts";
-import { ChangesBody, ChangesView, FileTree, ViewTabs, type ChangeView } from "#/components/changes.tsx";
+import { ChangesBody, ChangesView, FileTree, UnchangedDeclarations, ViewTabs, type ChangeView } from "#/components/changes.tsx";
 import { GraphPanel, GraphProvider } from "#/components/graphs.tsx";
 import { ReachPanel, ReachProvider } from "#/components/reach.tsx";
 import { runsChanged } from "#/graphs.ts";
@@ -82,7 +82,7 @@ export function ChangesPage({
   // The graphs' files: each one shown, and where it is on the page. Not the
   // tests and stories: the page sets them aside, so do the graphs.
   const graphFiles = useMemo(
-    () => shown.filter((entry) => entry.file.ignoredBy === null).map((entry) => ({ file: entry.file, href: `#${entry.id}` })),
+    () => shown.filter((entry) => entry.file.ignoredBy === null).map((entry) => ({ path: entry.file.path, href: `#${entry.id}` })),
     [shown],
   );
   const tabs = [
@@ -105,6 +105,8 @@ export function ChangesPage({
           {view === "reach" && <ReachPanel />}
           {graph && <GraphPanel view={view} files={graphFiles} pageTitle={title} />}
           <ChangesBody entries={shown} view={view} />
+          {/* The rest of what the graph draws, in the same column: their files didn't change, their code is fetched as it is at the head. */}
+          {graph && <UnchangedDeclarations files={graphFiles} repository={repository} head={"commit" in range ? range.commit : range.to} />}
         </ChangesView>
       </GraphProvider>
     </ReachProvider>

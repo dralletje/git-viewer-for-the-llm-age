@@ -4,10 +4,15 @@ import { useFetcher } from "react-router";
 import type { ChangeView } from "#/components/changes.tsx";
 import type { ChangesGraph } from "#/graph.server.ts";
 import { layoutGraphElk } from "#/graph-layout-elk.ts";
-import { appBoxesGraph, layoutGraph, rippleInFolders, rippleWithoutFileBoxes, type Graph, type GraphFile, type GraphLayout } from "#/graphs.ts";
+import { appBoxesGraph, layoutGraph, rippleInFolders, rippleWithoutFileBoxes, unchangedFiles, type Graph, type GraphFile, type GraphLayout } from "#/graphs.ts";
 
 /** The declaration graph of the changes: null while it's being found, or on a tab that doesn't need it. */
 const GraphContext = createContext<ChangesGraph | null>(null);
+
+/** The declaration graph of the changes (see `GraphProvider`): null while it's being found. */
+export function useGraph(): ChangesGraph | null {
+  return useContext(GraphContext);
+}
 
 /**
  * Fetches the declaration graph from `href` (the graph route) on the tabs
@@ -41,6 +46,9 @@ export function GraphPanel({ view, files, pageTitle }: { view: ChangeView; files
   if (data.status === "too-large") return <GraphNote>Not scanned: {data.sourceFiles} source files is more than a page can wait for.</GraphNote>;
   if (data.status === "failed") return <GraphNote>The declarations couldn't be followed: {data.message}</GraphNote>;
 
+  // Every declaration drawn links to its code: a changed file's above, an unchanged one's in the list below (see UnchangedDeclarations).
+  const linked = [...files, ...unchangedFiles(data, new Set(files.map((file) => file.path))).map((file) => ({ path: file.path, href: `#${file.id}` }))];
+
   const legend = (
     <>
       <Swatch className="border-amber-400 bg-amber-50 dark:bg-amber-950">changed</Swatch>
@@ -73,7 +81,7 @@ export function GraphPanel({ view, files, pageTitle }: { view: ChangeView; files
             : "What the changes spread to, and the uses they added or removed, in nested folder boxes in a box per app or package"
         }
         legend={legend}
-        graph={rippleInFolders(data, files, view === "nested")}
+        graph={rippleInFolders(data, linked, view === "nested")}
         empty="No code that runs changed."
         barTitle={pageTitle}
       />
@@ -84,7 +92,7 @@ export function GraphPanel({ view, files, pageTitle }: { view: ChangeView; files
       <GraphFrame
         title="What the changes spread to, and the uses they added or removed, in a box per app or package (no box per file)"
         legend={legend}
-        graph={rippleWithoutFileBoxes(data, files)}
+        graph={rippleWithoutFileBoxes(data, linked)}
         empty="No code that runs changed."
         barTitle={pageTitle}
       />
@@ -94,7 +102,7 @@ export function GraphPanel({ view, files, pageTitle }: { view: ChangeView; files
     <GraphFrame
       title="What the changes spread to, and the uses they added or removed, in a box per app or package"
       legend={legend}
-      graph={appBoxesGraph(data, files)}
+      graph={appBoxesGraph(data, linked)}
       empty="No code that runs changed."
       barTitle={pageTitle}
     />

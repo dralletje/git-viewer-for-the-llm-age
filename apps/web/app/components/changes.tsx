@@ -4,8 +4,10 @@ import type { FileDiff, FileStatus } from "@room/diff";
 import type { ChangedUnit, ExportChange, ImportChange, UsedChange } from "@room/syntax";
 import type { AnalyzedDeclaration, AnalyzedFile, AnalyzedHunk, DeclarationRow, OutsideChange } from "#/analyze-diff.server.ts";
 import { inFileOrder } from "#/declaration-order.ts";
+import { useGraph } from "#/components/graphs.tsx";
 import { ReachChips } from "#/components/reach.tsx";
-import { nothingRuns } from "#/graphs.ts";
+import { nothingRuns, unchangedFiles, type GraphFile } from "#/graphs.ts";
+import { declarationPath } from "#/paths.ts";
 import { buildFileTree, filesInTreeOrder, type FileTreeNode } from "#/file-tree.ts";
 
 /** One changed file on a commit or comparison page. */
@@ -212,7 +214,7 @@ export function ChangesView({ tree, children }: { tree: ReactNode; children: Rea
         link.toggleAttribute("data-unfocused", keep !== null && !keep.has(link.getAttribute("href")?.slice(1) ?? ""));
       }
       // Counted as the tree's header counts: the files to review, the set-aside ones not.
-      const reviewed = [...code.querySelectorAll("details[data-file]:not([data-set-aside])")].map((element) => element.id);
+      const reviewed = [...code.querySelectorAll("details[data-file]:not([data-set-aside]):not([data-unchanged])")].map((element) => element.id);
       setFocused(keep === null ? null : { shown: reviewed.filter((id) => keep.has(id)).length, of: reviewed.length });
     };
     // Choosing a file in the tree ends the focus: every file is back, and so is the whole graph.
@@ -406,6 +408,89 @@ export const ChangesBody = memo(function ChangesBody({ entries, view }: { entrie
     </div>
   );
 });
+
+/**
+ * Under the changed files, on the Ripple tabs: the declarations the graph
+ * draws whose files didn't change, so a click on any node in the graph has
+ * code to go to. By file, each declaration closed: its code (as it is at
+ * `head`) is fetched when it's opened, by hand or by a jump from the graph.
+ * `files`: the changed files the graph links to; the rest are these.
+ */
+export function UnchangedDeclarations({ files, repository, head }: { files: Array<GraphFile>; repository: string; head: string }) {
+  const data = useGraph();
+  if (data === null || data.status !== "scanned") return null;
+  const unchanged = unchangedFiles(data, new Set(files.map((file) => file.path)));
+  if (unchanged.length === 0) return null;
+  const count = unchanged.reduce((total, file) => total + file.declarations.length, 0);
+  return (
+    <section className="mt-10">
+      <h2 className="mb-1 text-sm font-medium">Unchanged, used by the changes</h2>
+      <p className="mb-3 text-xs text-neutral-500">
+        {count} {count === 1 ? "declaration" : "declarations"} in {unchanged.length} {unchanged.length === 1 ? "file" : "files"} the graph shows: their code is the same, what
+        they use changed. Open one, or click it in the graph, for its code.
+      </p>
+      <div className="flex flex-col gap-4">
+        {unchanged.map((file) => (
+          <details
+            key={file.id}
+            id={file.id}
+            open
+            // A file, as the changed ones (the focus hides it, the tree follows it); not counted among the files to review.
+            data-file=""
+            data-unchanged=""
+            className="group scroll-mt-[calc(var(--files-top,0px)+1rem)] rounded-md border border-dashed border-neutral-300 data-[unfocused]:hidden dark:border-neutral-700"
+          >
+            <summary className="sticky top-[var(--files-top,0px)] z-10 flex cursor-pointer items-center gap-2 rounded-t-md border-b border-neutral-200 bg-neutral-50 px-4 py-2 dark:border-neutral-800 dark:bg-neutral-900">
+              <span className="truncate font-mono text-sm">{file.path}</span>
+              <span className="shrink-0 rounded border border-neutral-300 px-1.5 text-[11px] text-neutral-500 dark:border-neutral-700">unchanged</span>
+            </summary>
+            {file.declarations.map((declaration) => (
+              <UnchangedDeclaration
+                key={declaration.id}
+                fileId={file.id}
+                label={declaration.label}
+                status={declaration.status}
+                exported={declaration.exported}
+                line={declaration.line}
+                href={declarationPath(repository, { head, path: file.path, start: declaration.line, end: declaration.endLine })}
+              />
+            ))}
+          </details>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/** One unchanged declaration: its name, and its code once opened. Its id is as a changed one's (`<file's id>--<name>`): the graph links there. */
+function UnchangedDeclaration({ fileId, label, status, exported, line, href }: { fileId: string; label: string; status: string; exported: boolean; line: number; href: string }) {
+  const fetcher = useFetcher<{ rows: Array<DeclarationRow>; tokenKinds: Array<string> }>();
+  const style = declarationStyle[status as AnalyzedDeclaration["status"]] ?? declarationStyle.unchanged;
+  return (
+    <details
+      id={`${fileId}--${label}`}
+      onToggle={(event) => {
+        if (event.currentTarget.open && fetcher.data === undefined && fetcher.state === "idle") fetcher.load(href);
+      }}
+      className="group/declaration scroll-mt-[calc(var(--files-top,0px)+4rem)] border-b border-neutral-200 last:border-b-0 dark:border-neutral-800"
+    >
+      <summary className="flex cursor-pointer list-none gap-2 px-4 py-3 text-xs hover:bg-neutral-50 dark:hover:bg-neutral-900/60">
+        <span className="w-3 shrink-0 select-none pt-0.5 text-neutral-400 transition-transform group-open/declaration:rotate-90">▸</span>
+        <span className="min-w-0 flex-1">
+          <span className={`mr-2 rounded border px-1.5 py-0.5 font-sans text-[11px] ${style.className}`}>{status === "affected" ? "same code, uses what changed" : style.word}</span>
+          {exported && <span className="mr-1 text-neutral-500">export</span>}
+          <span className="font-mono font-semibold">{label}</span>
+          <span className="ml-2 text-neutral-400">line {line}</span>
+        </span>
+      </summary>
+      {fetcher.data !== undefined ? (
+        <DeclarationRows rows={fetcher.data.rows} sides={["right"]} tokenKinds={fetcher.data.tokenKinds} />
+      ) : (
+        <p className="px-4 py-3 text-xs text-neutral-500">Loading its code…</p>
+      )}
+    </details>
+  );
+}
 
 const statusStyle: Record<FileStatus, { letter: string; className: string }> = {
   added: { letter: "A", className: "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300" },

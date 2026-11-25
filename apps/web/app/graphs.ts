@@ -31,8 +31,40 @@ export function runsChanged(file: AnalyzedFile): boolean {
   return (file.imports ?? []).some((change) => change.status !== "unchanged" && !change.typeOnly);
 }
 
-/** A changed file as the graphs need it: its analysis, and where it is on the page. */
-export type GraphFile = { file: AnalyzedFile; href: string };
+/** A file as the graphs need it: its path, and where it is on the page ("#file-3"). */
+export type GraphFile = { path: string; href: string };
+
+/**
+ * A file in the graph that isn't on the page: its code that runs didn't
+ * change, but declarations in it use what did. Listed under the changed
+ * files (as "#unchanged-<n>"), with the declarations the graph draws.
+ */
+export type UnchangedFile = { path: string; id: string; declarations: Array<GraphDeclaration> };
+
+/**
+ * The files of the declarations the graph draws (the changes, the ripple,
+ * the links' ends) that aren't among `onPage`, by path, each declaration
+ * once, in the file's order. The same list every time for the same data:
+ * the graph links to these ids, the list under the files has them.
+ */
+export function unchangedFiles(data: ScannedGraph, onPage: Set<string>): Array<UnchangedFile> {
+  const drawn = new Set([...data.seeds, ...data.ripple.edges.flatMap((edge) => [edge.from, edge.to]), ...data.links.flatMap((link) => [link.from, link.to])]);
+  const byPath = new Map<string, Map<string, GraphDeclaration>>();
+  for (const id of drawn) {
+    const declaration = data.declarations[id];
+    if (declaration === undefined || declaration.status === "outside" || declaration.status === "removed" || declaration.path === "" || onPage.has(declaration.path)) continue;
+    const declarations = byPath.get(declaration.path) ?? new Map<string, GraphDeclaration>();
+    declarations.set(declaration.label, declaration);
+    byPath.set(declaration.path, declarations);
+  }
+  return [...byPath.keys()]
+    .sort((a, b) => a.localeCompare(b))
+    .map((path, index) => ({
+      path,
+      id: `unchanged-${index}`,
+      declarations: [...(byPath.get(path)?.values() ?? [])].sort((a, b) => a.line - b.line),
+    }));
+}
 
 /** The declaration graph of the changes, found (see graph.server.ts). */
 export type ScannedGraph = Extract<ChangesGraph, { status: "scanned" }>;
@@ -67,7 +99,7 @@ export type Graph = { nodes: Array<GraphNode>; edges: Array<GraphEdge>; groups: 
  * or global: no box). Every edge goes between two of them.
  */
 function graphOf(data: ScannedGraph, files: Array<GraphFile>, ids: Iterable<string>, edges: Array<GraphEdge>): Graph {
-  const hrefOf = new Map(files.map(({ file, href }) => [file.path, href]));
+  const hrefOf = new Map(files.map(({ path, href }) => [path, href]));
   const graph: Graph = { nodes: [], edges: [], groups: [] };
   const paths = new Set<string>();
   const seen = new Set<string>();
