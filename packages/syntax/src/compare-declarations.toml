@@ -489,6 +489,33 @@ output = [
 ]
 
 [[suites.tests]]
+name = "a class that extends a plain name runs nothing: it's still part of X; extends a call does run"
+input.before = """
+const PhoneScreen = () => null;
+class Store extends Base<State> implements Saveable {}
+PhoneScreen.displayName = "Phone";
+const Other = () => null;
+class Mixed extends withLogging(Base) {}
+Other.displayName = "Other";
+"""
+input.after = """
+const PhoneScreen = () => null;
+class Store extends Base<State> implements Saveable {}
+PhoneScreen.displayName = "PhoneScreen";
+const Other = () => null;
+class Mixed extends withLogging(Base) {}
+Other.displayName = "Other!";
+"""
+output = [
+  { status = "changed", label = "PhoneScreen" },
+  { status = "unchanged", label = "Store" },
+  { status = "unchanged", label = "Other" },
+  { status = "unchanged", label = "Mixed" },
+  { status = "removed", label = "Other.displayName = \"Other\";" },
+  { status = "added", label = "Other.displayName = \"Other!\";" },
+]
+
+[[suites.tests]]
 name = "with code that runs between (a call, a statement), it's a statement of its own"
 input.before = """
 const PhoneScreen = () => null;

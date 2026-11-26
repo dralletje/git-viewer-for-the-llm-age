@@ -584,7 +584,14 @@ function declarationRunsNothing(node: Node): boolean {
       );
     case "class_declaration":
     case "abstract_class_declaration": {
-      if (node.namedChildren.some((child) => child?.type === "class_heritage" || child?.type === "decorator")) return false;
+      if (node.namedChildren.some((child) => child?.type === "decorator")) return false;
+      // `extends Base` only reads a name (and its prototype); `extends mixin(Base)`
+      // calls, `extends React.Component` could run a getter. `implements` is a type.
+      const heritage = node.namedChildren.find((child) => child?.type === "class_heritage");
+      const extendsSomethingThatRuns = (heritage?.namedChildren ?? []).some(
+        (clause) => clause?.type === "extends_clause" && clause.childForFieldName("value")?.type !== "identifier",
+      );
+      if (extendsSomethingThatRuns) return false;
       return (node.childForFieldName("body")?.namedChildren ?? []).every((member) => {
         if (member === null || member.type === "comment") return true;
         if (member.childForFieldName("name")?.type === "computed_property_name") return false;
