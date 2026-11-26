@@ -35,6 +35,14 @@ export function fitView(content: Size, viewport: Size, padding: number, limits: 
 }
 
 /**
+ * The view after the viewport changed size from `before` to `after`: what
+ * was in its middle stays in its middle.
+ */
+export function resizedView(view: View, before: Size, after: Size): View {
+  return { x: view.x + (after.width - before.width) / 2, y: view.y + (after.height - before.height) / 2, scale: view.scale };
+}
+
+/**
  * The view moved as little as it takes to show `rect` (in the content's
  * own coordinates) with `margin` around it; centered on it when it doesn't
  * fit. The same view when it's already in sight.

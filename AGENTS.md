@@ -11,6 +11,7 @@ pnpm typecheck        # every package
 pnpm test             # every package (node:test)
 pnpm dev              # the app with every repository, http://localhost:4700
 room <repo...>        # apps/web/bin/room.ts: builds when the source changed, serves on 4800
+pnpm --filter @room/canvas demo   # the pan/zoom canvas on its own, http://localhost:4710
 ```
 
 Node 26 (pnpm downloads it), TypeScript run directly: no build step for the
@@ -117,5 +118,5 @@ Parsing is in `points.ts` and `rules.server.ts`, and the reading in
 | `packages/diff` | Parses git's unified diff. |
 | `packages/git` | Talks to `git`: local repositories in place, GitHub ones cloned bare into `~/.cache/behind-the-room/repos`. Branches (local, then origin's), commits, comparisons, fetch. |
 | `packages/syntax` | tree-sitter for TS/TSX/JS: highlighting, imports and exports, the module graph, and comparing two versions declaration by declaration (`compare-declarations.ts`). |
-| `packages/canvas` | A framework-free pan/zoom canvas: drag, wheel, pinch, fit, show a rect. View math in `view.ts`, tested. |
+| `packages/canvas` | A framework-free pan/zoom canvas: drag, wheel, pinch, fit, show a rect, follows the viewport's size. View math in `view.ts`, tested. A change to how it handles input is tried in its demo (`demo/`, a page of linked cards with a button per behaviour) before the app. |
 | `apps/web` | The React Router 8 app, and the `room` command (`bin/room.ts`). |

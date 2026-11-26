@@ -1,6 +1,6 @@
 {
   "extends": ["@dral/tsconfig/modern", "@dral/tsconfig/reasonable"],
-  "include": ["src"],
+  "include": ["src", "demo"],
   "compilerOptions": {
     "lib": ["ES2024", "DOM", "DOM.Iterable"],
     "types": ["node"],

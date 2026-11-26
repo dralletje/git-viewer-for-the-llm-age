@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { fitView, viewShowing, zoomAt } from "#/view.ts";
+import { fitView, resizedView, viewShowing, zoomAt } from "#/view.ts";
 
 const limits = { minScale: 0.1, maxScale: 4 };
 
@@ -23,6 +23,16 @@ test("fitting centers the content, as large as fits, not past the largest scale"
   assert.deepEqual(fitView({ width: 2000, height: 500 }, { width: 1000, height: 500 }, 0, limits), { x: 0, y: 125, scale: 0.5 });
   // A small graph stays at its largest scale, centered.
   assert.deepEqual(fitView({ width: 100, height: 50 }, { width: 1000, height: 500 }, 0, { minScale: 0.1, maxScale: 1 }), { x: 450, y: 225, scale: 1 });
+});
+
+test("a resized viewport keeps what was in its middle in its middle", () => {
+  const view = { x: 30, y: -10, scale: 0.5 };
+  const before = { width: 400, height: 300 };
+  const after = { width: 600, height: 200 };
+  const middleBefore = { x: (before.width / 2 - view.x) / view.scale, y: (before.height / 2 - view.y) / view.scale };
+  const resized = resizedView(view, before, after);
+  assert.equal(resized.scale, 0.5);
+  assert.deepEqual({ x: (after.width / 2 - resized.x) / resized.scale, y: (after.height / 2 - resized.y) / resized.scale }, middleBefore);
 });
 
 test("showing a rect moves as little as it takes, and not at all when it's in sight", () => {

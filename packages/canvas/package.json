@@ -10,11 +10,13 @@
   },
   "scripts": {
     "typecheck": "tsc",
-    "test": "node --test 'src/**/*.test.ts'"
+    "test": "node --test 'src/**/*.test.ts'",
+    "demo": "vite demo --port 4710"
   },
   "devDependencies": {
     "@dral/tsconfig": "catalog:",
     "@types/node": "catalog:",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "vite": "^8.3.8"
   }
 }
