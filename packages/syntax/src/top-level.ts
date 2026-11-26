@@ -117,6 +117,16 @@ export function extractTopLevel(root: Node): TopLevel {
     return row === 0 ? root.startPosition.column + offset : offset - (lineStarts[row] ?? 0);
   };
 
+  const usesIn = (node: Node, typeOnly: boolean) =>
+    referencesIn(node).map(({ node: mention, inType }): Use => {
+      const start = columnOf(mention);
+      return { name: mention.text, line: mention.startPosition.row + 1, start, end: start + (mention.endIndex - mention.startIndex), inType: typeOnly || inType };
+    });
+
+  // The declaration the previous statement was, and its last line: a
+  // `X.displayName = ...` on the very next line is part of it (see below).
+  let previousDeclaration: { unit: number; endLine: number } | null = null;
+
   const addUnit = (
     node: Node,
     kind: TopLevelUnit["kind"],
@@ -127,11 +137,7 @@ export function extractTopLevel(root: Node): TopLevel {
     fingerprint = fingerprintOf(node, true),
   ) => {
     // An import uses nothing in this file; its statement's other names are its siblings.
-    const mentions = kind === "import" ? [] : referencesIn(node);
-    const uses = mentions.map(({ node: mention, inType }): Use => {
-      const start = columnOf(mention);
-      return { name: mention.text, line: mention.startPosition.row + 1, start, end: start + (mention.endIndex - mention.startIndex), inType: typeOnly || inType };
-    });
+    const uses = kind === "import" ? [] : usesIn(node, typeOnly);
     const references = uses.map((use) => use.name);
     const runtimeReferences = uses.filter((use) => !use.inType).map((use) => use.name);
     // An import's fingerprint is what it imports, which is the same with or without types.
@@ -161,6 +167,10 @@ export function extractTopLevel(root: Node): TopLevel {
 
   for (const statement of root.namedChildren) {
     if (statement === null) continue;
+    // Only the statement right after a declaration can join it: anything
+    // between (a comment too) ends that.
+    const previous: { unit: number; endLine: number } | null = previousDeclaration;
+    previousDeclaration = null;
     if (statement.type === "comment") {
       const from = statement.startPosition.row + 1;
       if (commentsFrom === null || commentsTo < from - 1) {
@@ -237,6 +247,7 @@ export function extractTopLevel(root: Node): TopLevel {
         for (const entry of declarationExports(declaration, isDefault, line)) {
           exports.push({ ...entry, unit });
         }
+        previousDeclaration = { unit, endLine: statement.endPosition.row + 1 };
         continue;
       }
 
@@ -247,6 +258,33 @@ export function extractTopLevel(root: Node): TopLevel {
     }
 
     if (statement.type === "expression_statement") {
+      // `PhoneScreen.displayName = "PhoneScreen";` on the line right after
+      // PhoneScreen's declaration: part of PhoneScreen, not code of its own.
+      // A blank line or anything else between, and it stays a statement.
+      const assignment = statement.namedChildren[0];
+      const target = assignment?.type === "assignment_expression" ? assignment.childForFieldName("left") : null;
+      const object = target?.type === "member_expression" ? target.childForFieldName("object") : null;
+      const owner: TopLevelUnit | undefined = previous === null ? undefined : units[previous.unit];
+      if (
+        previous !== null &&
+        owner !== undefined &&
+        !owner.typeOnly &&
+        line <= previous.endLine + 1 &&
+        object?.type === "identifier" &&
+        owner.names.includes(object.text)
+      ) {
+        const uses = usesIn(statement, false);
+        owner.uses.push(...uses);
+        owner.references.push(...uses.map((use) => use.name));
+        owner.runtimeReferences.push(...uses.filter((use) => !use.inType).map((use) => use.name));
+        owner.fingerprint = `${owner.fingerprint} ${fingerprintOf(statement, true)}`;
+        owner.runtimeFingerprint = `${owner.runtimeFingerprint} ${fingerprintOf(statement, false)}`;
+        owner.comments = [owner.comments, ...commentsIn(statement).map(collapse)].filter((text) => text !== "").join("\n");
+        owner.endLine = statement.endPosition.row + 1;
+        previousDeclaration = { unit: previous.unit, endLine: owner.endLine };
+        continue;
+      }
+
       const unit = addUnit(statement, "statement", [], `statement:${fingerprintOf(statement, true)}`, `line ${line}`, false);
       const commonjs = commonjsExport(statement);
       if (commonjs !== null) {
@@ -258,7 +296,8 @@ export function extractTopLevel(root: Node): TopLevel {
     const names = declaredNames(statement);
     const typeOnly = statement.type === "ambient_declaration" || typeOnlyDeclaration(statement);
     if (names !== null && names.length > 0) {
-      addUnit(statement, "declaration", names, `name:${names.join(",")}`, names.join(", "), typeOnly);
+      const unit = addUnit(statement, "declaration", names, `name:${names.join(",")}`, names.join(", "), typeOnly);
+      previousDeclaration = { unit, endLine: statement.endPosition.row + 1 };
     } else {
       addUnit(statement, "statement", [], `statement:${fingerprintOf(statement, true)}`, `line ${line}`, typeOnly);
     }

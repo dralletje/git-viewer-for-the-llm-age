@@ -430,6 +430,59 @@ output = [
 ]
 
 [[suites]]
+name = "assignments right after a declaration"
+
+[[suites.tests]]
+name = "X.displayName = ... right below X is part of X"
+input.before = """
+export const PhoneScreen = () => null;
+PhoneScreen.displayName = "Phone";
+PhoneScreen.defaultProps = {};
+function App() {
+  return PhoneScreen();
+}
+"""
+input.after = """
+export const PhoneScreen = () => null;
+PhoneScreen.displayName = "PhoneScreen";
+PhoneScreen.defaultProps = {};
+function App() {
+  return PhoneScreen();
+}
+"""
+output = [
+  { status = "changed", label = "PhoneScreen" },
+  { status = "affected", label = "App", via = ["PhoneScreen"], uses = ["5:   return «PhoneScreen»(); (changed)"] },
+]
+
+[[suites.tests]]
+name = "after a blank line, or another statement, it's a statement of its own"
+input.before = """
+const PhoneScreen = () => null;
+
+PhoneScreen.displayName = "Phone";
+const Other = () => null;
+console.log("between");
+Other.displayName = "Other";
+"""
+input.after = """
+const PhoneScreen = () => null;
+
+PhoneScreen.displayName = "PhoneScreen";
+const Other = () => null;
+console.log("between");
+Other.displayName = "Other";
+"""
+output = [
+  { status = "unchanged", label = "PhoneScreen" },
+  { status = "removed", label = "PhoneScreen.displayName = \"Phone\";" },
+  { status = "added", label = "PhoneScreen.displayName = \"PhoneScreen\";" },
+  { status = "unchanged", label = "Other" },
+  { status = "unchanged", label = "console.log(\"between\");" },
+  { status = "unchanged", label = "Other.displayName = \"Other\";" },
+]
+
+[[suites]]
 name = "removed declarations"
 
 [[suites.tests]]
