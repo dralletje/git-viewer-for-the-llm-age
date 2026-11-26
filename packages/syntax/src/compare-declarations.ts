@@ -3,6 +3,9 @@ import type { TopLevel, TopLevelUnit, Use } from "#/top-level.ts";
 /** Lines of one version of a file, 1-based and inclusive. */
 export type LineRange = { startLine: number; endLine: number };
 
+/** Where a declaration is: its lines, and more of its code further down (see TopLevelUnit's `parts`). */
+export type DeclarationRange = LineRange & { parts: Array<LineRange> };
+
 /** What happened to one top-level declaration or statement (imports aside). */
 export type DeclarationChange = {
   /** Its names; for a statement, the start of its code. */
@@ -21,8 +24,8 @@ export type DeclarationChange = {
   status: "added" | "removed" | "changed" | "affected" | "types" | "comments" | "formatting" | "unchanged";
   /** It's only a type (an interface, a type alias, ...): gone after compiling. */
   typeOnly: boolean;
-  before: LineRange | null;
-  after: LineRange | null;
+  before: DeclarationRange | null;
+  after: DeclarationRange | null;
   /** For "affected": the top-level names from this one to what changed, that one last. */
   via: Array<string>;
   /** Where its new code, when it runs, uses a top-level name that was added, changed or affected (mentions in types aside). */
@@ -49,11 +52,15 @@ export function compareDeclarations(before: TopLevel, after: TopLevel, oldLines:
   // Its text without blank lines: adding or removing one isn't a change. (One
   // inside a string is: it changes the code's tokens, so the fingerprint.)
   const text = (lines: Array<string>, unit: TopLevelUnit) =>
-    lines
-      .slice(unit.startLine - 1, unit.endLine)
+    [unit, ...unit.parts]
+      .flatMap((part) => lines.slice(part.startLine - 1, part.endLine))
       .filter((line) => line.trim() !== "")
       .join("\n");
-  const range = (unit: TopLevelUnit): LineRange => ({ startLine: unit.startLine, endLine: unit.endLine });
+  const range = (unit: TopLevelUnit): DeclarationRange => ({
+    startLine: unit.startLine,
+    endLine: unit.endLine,
+    parts: unit.parts.map((part) => ({ startLine: part.startLine, endLine: part.endLine })),
+  });
   const label = (lines: Array<string>, unit: TopLevelUnit) => {
     if (unit.kind !== "statement") return unit.label;
     const code = (lines[unit.line - 1] ?? "").trim();

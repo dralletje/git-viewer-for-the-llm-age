@@ -160,6 +160,9 @@ export async function analyzeFileDiff(file: FileDiff, language: LanguageName, bl
     if (change.status === "unchanged") continue;
     cover(coveredOld, change.before);
     cover(coveredNew, change.after);
+    // Its code further down (`X.displayName = ...` below other declarations).
+    for (const part of change.before?.parts ?? []) cover(coveredOld, part);
+    for (const part of change.after?.parts ?? []) cover(coveredNew, part);
   }
   for (const unit of before.topLevel.units) if (unit.kind === "import") cover(coveredOld, unit);
   for (const unit of after.topLevel.units) if (unit.kind === "import") cover(coveredNew, unit);
@@ -209,8 +212,9 @@ export async function analyzeFileDiff(file: FileDiff, language: LanguageName, bl
    * lines that differ only in comments or formatting are the same.
    */
   const rows = (change: DeclarationChange): Array<DeclarationRow> => {
-    const oldRange = change.before === null ? [] : range(change.before.startLine, change.before.endLine);
-    const newRange = change.after === null ? [] : range(change.after.startLine, change.after.endLine);
+    // Its lines, and its code further down right after them, as if it stood there.
+    const oldRange = change.before === null ? [] : [change.before, ...change.before.parts].flatMap((part) => range(part.startLine, part.endLine));
+    const newRange = change.after === null ? [] : [change.after, ...change.after.parts].flatMap((part) => range(part.startLine, part.endLine));
     const steps = diffSequences(
       oldRange.map((line) => oldLines[line - 1] ?? ""),
       newRange.map((line) => newLines[line - 1] ?? ""),
@@ -319,7 +323,12 @@ export async function analyzeFileDiff(file: FileDiff, language: LanguageName, bl
         changes.find((change) => {
           const range = line.kind === "removed" ? change.before : change.after;
           const number = line.kind === "removed" ? line.oldLine : line.newLine;
-          return change.status === "unchanged" && range !== null && number !== null && number >= range.startLine && number <= range.endLine;
+          return (
+            change.status === "unchanged" &&
+            range !== null &&
+            number !== null &&
+            [range, ...range.parts].some((part) => number >= part.startLine && number <= part.endLine)
+          );
         });
       const code = run.filter((line) => line.text.trim() !== "");
       const kind: OutsideChange["kind"] = texts.every((text) => text === "" || comment(text))

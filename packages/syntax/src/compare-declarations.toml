@@ -456,30 +456,85 @@ output = [
 ]
 
 [[suites.tests]]
-name = "after a blank line, or another statement, it's a statement of its own"
+name = "with only code that runs nothing between (comments, functions, types, plain values), it's still part of X"
 input.before = """
-const PhoneScreen = () => null;
+export const PhoneScreen = () => null;
+
+// The other screen.
+function Other() {
+  return null;
+}
+type Props = { name: string };
+const labels = { title: "Phone", sizes: [1, 2] };
 
 PhoneScreen.displayName = "Phone";
-const Other = () => null;
+"""
+input.after = """
+export const PhoneScreen = () => null;
+
+// The other screen.
+function Other() {
+  return null;
+}
+type Props = { name: string };
+const labels = { title: "Phone", sizes: [1, 2] };
+
+PhoneScreen.displayName = "PhoneScreen";
+"""
+output = [
+  { status = "changed", label = "PhoneScreen" },
+  { status = "unchanged", label = "Other" },
+  { status = "unchanged", label = "Props", typeOnly = true },
+  { status = "unchanged", label = "labels" },
+]
+
+[[suites.tests]]
+name = "with code that runs between (a call, a statement), it's a statement of its own"
+input.before = """
+const PhoneScreen = () => null;
+const Other = makeScreen();
+PhoneScreen.displayName = "Phone";
+const Third = () => null;
 console.log("between");
-Other.displayName = "Other";
+Third.displayName = "Third";
 """
 input.after = """
 const PhoneScreen = () => null;
-
+const Other = makeScreen();
 PhoneScreen.displayName = "PhoneScreen";
-const Other = () => null;
+const Third = () => null;
 console.log("between");
-Other.displayName = "Other";
+Third.displayName = "Third";
 """
 output = [
   { status = "unchanged", label = "PhoneScreen" },
+  { status = "unchanged", label = "Other" },
   { status = "removed", label = "PhoneScreen.displayName = \"Phone\";" },
   { status = "added", label = "PhoneScreen.displayName = \"PhoneScreen\";" },
-  { status = "unchanged", label = "Other" },
+  { status = "unchanged", label = "Third" },
   { status = "unchanged", label = "console.log(\"between\");" },
-  { status = "unchanged", label = "Other.displayName = \"Other\";" },
+  { status = "unchanged", label = "Third.displayName = \"Third\";" },
+]
+
+[[suites.tests]]
+name = "an assignment to another declaration between keeps it apart too"
+input.before = """
+const PhoneScreen = () => null;
+const Other = () => null;
+Other.displayName = "Other";
+PhoneScreen.displayName = "Phone";
+"""
+input.after = """
+const PhoneScreen = () => null;
+const Other = () => null;
+Other.displayName = "Other";
+PhoneScreen.displayName = "PhoneScreen";
+"""
+output = [
+  { status = "unchanged", label = "PhoneScreen" },
+  { status = "unchanged", label = "Other" },
+  { status = "removed", label = "PhoneScreen.displayName = \"Phone\";" },
+  { status = "added", label = "PhoneScreen.displayName = \"PhoneScreen\";" },
 ]
 
 [[suites]]

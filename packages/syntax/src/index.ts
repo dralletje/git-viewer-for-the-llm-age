@@ -9,7 +9,7 @@ export type { ModuleGraph, ModuleUnit } from "#/module-graph.ts";
 export { compareImports } from "#/compare-imports.ts";
 export type { ImportChange } from "#/compare-imports.ts";
 export { compareDeclarations } from "#/compare-declarations.ts";
-export type { DeclarationChange, LineRange, UsedChange } from "#/compare-declarations.ts";
+export type { DeclarationChange, DeclarationRange, LineRange, UsedChange } from "#/compare-declarations.ts";
 export { compareModules } from "#/compare-modules.ts";
 export type { ChangedUnit, ExportChange, ModuleChanges } from "#/compare-modules.ts";
 export type { Token } from "#/highlight.ts";

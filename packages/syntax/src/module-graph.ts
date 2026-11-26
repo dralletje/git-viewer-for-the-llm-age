@@ -45,7 +45,7 @@ export function moduleGraph(topLevel: TopLevel, imports: Array<Import>, globals:
 
   topLevel.units.forEach((unit, index) => {
     if (unit.kind === "import" || unit.typeOnly) return;
-    const inside = (line: number) => line >= unit.startLine && line <= unit.endLine;
+    const inside = (line: number) => [unit, ...unit.parts].some((part) => line >= part.startLine && line <= part.endLine);
     kept.set(index, units.length);
     units.push({
       names: unit.names,

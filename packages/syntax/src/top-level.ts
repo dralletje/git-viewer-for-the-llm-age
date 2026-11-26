@@ -51,6 +51,12 @@ export type TopLevelUnit = {
   /** 1-based, its whole statement: from the comments right above it to its last line. */
   startLine: number;
   endLine: number;
+  /**
+   * More of its code further down, apart from the rest: a `X.displayName = ...`
+   * with other declarations between (see extractTopLevel). Each from the
+   * comments right above it to its last line.
+   */
+  parts: Array<{ startLine: number; endLine: number }>;
 };
 
 /**
@@ -123,9 +129,11 @@ export function extractTopLevel(root: Node): TopLevel {
       return { name: mention.text, line: mention.startPosition.row + 1, start, end: start + (mention.endIndex - mention.startIndex), inType: typeOnly || inType };
     });
 
-  // The declaration the previous statement was, and its last line: a
-  // `X.displayName = ...` on the very next line is part of it (see below).
-  let previousDeclaration: { unit: number; endLine: number } | null = null;
+  // The declarations since the last statement that runs something, by name:
+  // a `X.displayName = ...` after X's is part of X (see below).
+  let declaredSince = new Map<string, number>();
+  // The unit of the statement before this one (comments aside); null for an import or export list.
+  let previousUnit: number | null = null;
 
   const addUnit = (
     node: Node,
@@ -161,16 +169,13 @@ export function extractTopLevel(root: Node): TopLevel {
       line,
       startLine,
       endLine: node.endPosition.row + 1,
+      parts: [],
     });
     return units.length - 1;
   };
 
   for (const statement of root.namedChildren) {
     if (statement === null) continue;
-    // Only the statement right after a declaration can join it: anything
-    // between (a comment too) ends that.
-    const previous: { unit: number; endLine: number } | null = previousDeclaration;
-    previousDeclaration = null;
     if (statement.type === "comment") {
       const from = statement.startPosition.row + 1;
       if (commentsFrom === null || commentsTo < from - 1) {
@@ -184,6 +189,8 @@ export function extractTopLevel(root: Node): TopLevel {
     // (A comment run above an earlier statement ends before that statement,
     // so addUnit doesn't count it for this one.)
     const line = statement.startPosition.row + 1;
+    const previous: number | null = previousUnit;
+    previousUnit = null;
 
     if (statement.type === "import_statement") {
       const parsed = importStatement(statement);
@@ -247,41 +254,63 @@ export function extractTopLevel(root: Node): TopLevel {
         for (const entry of declarationExports(declaration, isDefault, line)) {
           exports.push({ ...entry, unit });
         }
-        previousDeclaration = { unit, endLine: statement.endPosition.row + 1 };
+        if (!ambient && !declarationRunsNothing(declaration)) {
+          declaredSince = new Map();
+        }
+        for (const name of names) {
+          declaredSince.set(name, unit);
+        }
+        previousUnit = unit;
         continue;
       }
 
       // `export default <expression>`, `export = <expression>`.
       const unit = addUnit(statement, "declaration", [], "default", "default", false);
       exports.push({ name: "default", kind: "value", typeOnly: false, signature: null, line, unit });
+      const value = statement.namedChildren.filter((child) => child !== null && child.type !== "comment").at(-1) ?? null;
+      if (!valueRunsNothing(value)) {
+        declaredSince = new Map();
+      }
       continue;
     }
 
     if (statement.type === "expression_statement") {
-      // `PhoneScreen.displayName = "PhoneScreen";` on the line right after
-      // PhoneScreen's declaration: part of PhoneScreen, not code of its own.
-      // A blank line or anything else between, and it stays a statement.
+      // `PhoneScreen.displayName = "PhoneScreen";` after PhoneScreen's
+      // declaration, with nothing between that runs (comments, functions,
+      // types, plain values): part of PhoneScreen, not code of its own.
+      // Anything between that runs, an assignment to another declaration
+      // too, and it stays a statement.
       const assignment = statement.namedChildren[0];
       const target = assignment?.type === "assignment_expression" ? assignment.childForFieldName("left") : null;
       const object = target?.type === "member_expression" ? target.childForFieldName("object") : null;
-      const owner: TopLevelUnit | undefined = previous === null ? undefined : units[previous.unit];
-      if (
-        previous !== null &&
-        owner !== undefined &&
-        !owner.typeOnly &&
-        line <= previous.endLine + 1 &&
-        object?.type === "identifier" &&
-        owner.names.includes(object.text)
-      ) {
+      const ownerIndex = object?.type === "identifier" ? declaredSince.get(object.text) : undefined;
+      const owner: TopLevelUnit | undefined = ownerIndex === undefined ? undefined : units[ownerIndex];
+      if (ownerIndex !== undefined && owner !== undefined && !owner.typeOnly) {
         const uses = usesIn(statement, false);
         owner.uses.push(...uses);
         owner.references.push(...uses.map((use) => use.name));
         owner.runtimeReferences.push(...uses.filter((use) => !use.inType).map((use) => use.name));
         owner.fingerprint = `${owner.fingerprint} ${fingerprintOf(statement, true)}`;
         owner.runtimeFingerprint = `${owner.runtimeFingerprint} ${fingerprintOf(statement, false)}`;
-        owner.comments = [owner.comments, ...commentsIn(statement).map(collapse)].filter((text) => text !== "").join("\n");
-        owner.endLine = statement.endPosition.row + 1;
-        previousDeclaration = { unit: previous.unit, endLine: owner.endLine };
+        const attached = commentsFrom !== null && commentsTo >= line - 1;
+        owner.comments = [owner.comments, ...(attached ? commentsAbove : []).map(collapse), ...commentsIn(statement).map(collapse)]
+          .filter((text) => text !== "")
+          .join("\n");
+        const endLine = statement.endPosition.row + 1;
+        const lastPart = owner.parts.at(-1);
+        if (previous === ownerIndex) {
+          // Right below the owner's code: that code goes on.
+          if (lastPart === undefined) {
+            owner.endLine = endLine;
+          } else {
+            lastPart.endLine = endLine;
+          }
+        } else {
+          owner.parts.push({ startLine: attached && commentsFrom !== null ? commentsFrom : line, endLine });
+        }
+        // It runs: only more of the owner's own can join it from here.
+        declaredSince = new Map(owner.names.map((name) => [name, ownerIndex]));
+        previousUnit = ownerIndex;
         continue;
       }
 
@@ -290,6 +319,8 @@ export function extractTopLevel(root: Node): TopLevel {
       if (commonjs !== null) {
         exports.push({ ...commonjs, unit });
       }
+      declaredSince = new Map();
+      previousUnit = unit;
       continue;
     }
 
@@ -297,9 +328,19 @@ export function extractTopLevel(root: Node): TopLevel {
     const typeOnly = statement.type === "ambient_declaration" || typeOnlyDeclaration(statement);
     if (names !== null && names.length > 0) {
       const unit = addUnit(statement, "declaration", names, `name:${names.join(",")}`, names.join(", "), typeOnly);
-      previousDeclaration = { unit, endLine: statement.endPosition.row + 1 };
+      if (!declarationRunsNothing(statement)) {
+        declaredSince = new Map();
+      }
+      for (const name of names) {
+        declaredSince.set(name, unit);
+      }
+      previousUnit = unit;
     } else {
-      addUnit(statement, "statement", [], `statement:${fingerprintOf(statement, true)}`, `line ${line}`, typeOnly);
+      const unit = addUnit(statement, "statement", [], `statement:${fingerprintOf(statement, true)}`, `line ${line}`, typeOnly);
+      if (!typeOnly) {
+        declaredSince = new Map();
+      }
+      previousUnit = unit;
     }
   }
 
@@ -481,6 +522,103 @@ function commonjsExport(statement: Node): Omit<Export, "unit"> | null {
     return { name: named[1] ?? "", kind: "commonjs", typeOnly: false, signature: null, line };
   }
   return null;
+}
+
+/**
+ * A declaration that runs nothing when the file loads besides defining its
+ * names: code after it can't tell it's there. Functions, types, classes
+ * without `extends`, decorators or static code, variables set to plain
+ * values (see valueRunsNothing). Unsure: it runs something.
+ */
+function declarationRunsNothing(node: Node): boolean {
+  switch (node.type) {
+    case "function_declaration":
+    case "generator_function_declaration":
+    case "function_signature":
+    case "interface_declaration":
+    case "type_alias_declaration":
+    case "ambient_declaration":
+      return true;
+    case "lexical_declaration":
+    case "variable_declaration":
+      // A destructuring pattern runs getters or an iterator: not plain.
+      return node.namedChildren.every(
+        (declarator) =>
+          declarator === null ||
+          declarator.type !== "variable_declarator" ||
+          (declarator.childForFieldName("name")?.type === "identifier" && valueRunsNothing(declarator.childForFieldName("value"))),
+      );
+    case "enum_declaration":
+      return (node.childForFieldName("body")?.namedChildren ?? []).every(
+        (member) => member === null || member.type !== "enum_assignment" || valueRunsNothing(member.childForFieldName("value")),
+      );
+    case "class_declaration":
+    case "abstract_class_declaration": {
+      if (node.namedChildren.some((child) => child?.type === "class_heritage" || child?.type === "decorator")) return false;
+      return (node.childForFieldName("body")?.namedChildren ?? []).every((member) => {
+        if (member === null || member.type === "comment") return true;
+        if (member.childForFieldName("name")?.type === "computed_property_name") return false;
+        if (member.namedChildren.some((child) => child?.type === "decorator")) return false;
+        // An instance field runs when an instance is made, a static one now.
+        if (member.type === "public_field_definition") {
+          return !member.children.some((child) => child?.type === "static") || valueRunsNothing(member.childForFieldName("value"));
+        }
+        return (
+          member.type === "method_definition" ||
+          member.type === "method_signature" ||
+          member.type === "abstract_method_signature" ||
+          member.type === "index_signature"
+        );
+      });
+    }
+    default:
+      return false;
+  }
+}
+
+/**
+ * A value that runs nothing to make: a function, a literal, a name, or an
+ * array or object of those. No value at all counts too. A call, `new`, a
+ * spread or a computed key runs something.
+ */
+function valueRunsNothing(node: Node | null): boolean {
+  if (node === null) return true;
+  switch (node.type) {
+    case "arrow_function":
+    case "function_expression":
+    case "function":
+    case "generator_function":
+    case "string":
+    case "number":
+    case "true":
+    case "false":
+    case "null":
+    case "undefined":
+    case "regex":
+    case "identifier":
+      return true;
+    case "template_string":
+      return !node.namedChildren.some((child) => child?.type === "template_substitution");
+    case "unary_expression":
+      // `-1`; on anything else it could call valueOf.
+      return node.childForFieldName("argument")?.type === "number";
+    case "parenthesized_expression":
+    case "as_expression":
+    case "satisfies_expression":
+    case "non_null_expression":
+      return valueRunsNothing(node.namedChildren.find((child) => child !== null && child.type !== "comment") ?? null);
+    case "array":
+      return node.namedChildren.every((child) => child === null || child.type === "comment" || valueRunsNothing(child));
+    case "object":
+      return node.namedChildren.every((member) => {
+        if (member === null || member.type === "comment" || member.type === "shorthand_property_identifier") return true;
+        if (member.type === "method_definition") return member.childForFieldName("name")?.type !== "computed_property_name";
+        if (member.type === "pair") return member.childForFieldName("key")?.type !== "computed_property_name" && valueRunsNothing(member.childForFieldName("value"));
+        return false;
+      });
+    default:
+      return false;
+  }
 }
 
 /** A declaration that only exists for the type checker. */
