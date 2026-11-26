@@ -71,6 +71,31 @@ test("a click on a link goes through; a drag from it moves the view and clicks n
   assert.match((await page.locator("#log").textContent()) ?? "", /^clicked Card 14\n$/);
 });
 
+test("a link focused out of sight is moved into it, and zooming still turns around the pointer", async () => {
+  await page.evaluate(() => (window as unknown as { canvas: { setView(view: View): void } }).canvas.setView({ x: 0, y: 0, scale: 1 }));
+  // As Tab does: the browser scrolls the viewport to show it.
+  await page.locator(".card", { hasText: /^Card 140$/ }).focus();
+  await page.waitForFunction(() => {
+    const viewport = document.querySelector("#viewport") as HTMLElement;
+    return viewport.scrollLeft === 0 && viewport.scrollTop === 0;
+  }, undefined, { timeout: 2000 });
+  const box = await page.locator("#viewport").boundingBox();
+  const card = await page.locator(".card", { hasText: /^Card 140$/ }).boundingBox();
+  assert.ok(box !== null && card !== null);
+  assert.ok(card.x >= box.x && card.y >= box.y && card.x + card.width <= box.x + box.width && card.y + card.height <= box.y + box.height, "Card 140 is in sight");
+
+  const pointer = { x: card.x + card.width / 2, y: card.y + card.height / 2 };
+  const under = () => page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest(".card")?.textContent, pointer);
+  assert.equal(await under(), "Card 140");
+  const before = await view();
+  await page.mouse.move(pointer.x, pointer.y);
+  await page.keyboard.down("Control");
+  await page.mouse.wheel(0, -100);
+  await page.keyboard.up("Control");
+  await page.waitForFunction((scale) => (window as unknown as { canvas: { view(): View } }).canvas.view().scale !== scale, before.scale);
+  assert.equal(await under(), "Card 140");
+});
+
 test("the wheel moves; ctrl + wheel zooms around the pointer", async () => {
   const box = await page.locator("#viewport").boundingBox();
   assert.ok(box !== null);

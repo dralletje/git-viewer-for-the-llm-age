@@ -38,7 +38,8 @@ const dragThreshold = 4;
  * A press that turns into a drag doesn't click what it started on (a link
  * in the content), so links in it still work with a plain click.
  * When the viewport changes size, a fitted view is fitted again, and any
- * other view keeps what was in the middle in the middle.
+ * other view keeps what was in the middle in the middle. When the browser
+ * scrolls the viewport (focus, find in page), the scroll becomes the view.
  */
 export function attachCanvas(viewport: HTMLElement, content: HTMLElement | SVGElement, options: CanvasOptions): Canvas {
   const limits: Limits = { minScale: options.minScale ?? 0.05, maxScale: options.maxScale ?? 4 };
@@ -199,6 +200,21 @@ export function attachCanvas(viewport: HTMLElement, content: HTMLElement | SVGEl
   const onDragStart = (event: DragEvent) => {
     event.preventDefault();
   };
+  // The browser scrolls the viewport itself (hidden overflow still scrolls)
+  // to show what it moves to: a link reached with Tab, a match of find in
+  // page. Zooming would then turn around the wrong point, as the view no
+  // longer says where the content is. So that scroll becomes part of the
+  // view: the same picture, with the viewport back at 0, 0.
+  const onScroll = () => {
+    const left = viewport.scrollLeft;
+    const top = viewport.scrollTop;
+    if (left === 0 && top === 0) return;
+    viewport.scrollLeft = 0;
+    viewport.scrollTop = 0;
+    stop();
+    fitted = null;
+    apply({ ...current, x: current.x - left, y: current.y - top });
+  };
 
   // The viewport changing size: the page's layout, the window, a hidden tab shown.
   let size = viewportSize();
@@ -233,6 +249,7 @@ export function attachCanvas(viewport: HTMLElement, content: HTMLElement | SVGEl
   viewport.addEventListener("pointercancel", onPointerUp);
   viewport.addEventListener("click", onClick, { capture: true });
   viewport.addEventListener("dragstart", onDragStart);
+  viewport.addEventListener("scroll", onScroll);
 
   apply(current);
 
@@ -274,6 +291,7 @@ export function attachCanvas(viewport: HTMLElement, content: HTMLElement | SVGEl
       viewport.removeEventListener("pointercancel", onPointerUp);
       viewport.removeEventListener("click", onClick, { capture: true });
       viewport.removeEventListener("dragstart", onDragStart);
+      viewport.removeEventListener("scroll", onScroll);
     },
   };
 }
