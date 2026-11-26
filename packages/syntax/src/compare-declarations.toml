@@ -517,7 +517,7 @@ output = [
 ]
 
 [[suites.tests]]
-name = "an assignment to another declaration between keeps it apart too"
+name = "a plain assignment to another function between runs nothing else: it's still part of X"
 input.before = """
 const PhoneScreen = () => null;
 const Other = () => null;
@@ -531,10 +531,68 @@ Other.displayName = "Other";
 PhoneScreen.displayName = "PhoneScreen";
 """
 output = [
-  { status = "unchanged", label = "PhoneScreen" },
+  { status = "changed", label = "PhoneScreen" },
   { status = "unchanged", label = "Other" },
-  { status = "removed", label = "PhoneScreen.displayName = \"Phone\";" },
-  { status = "added", label = "PhoneScreen.displayName = \"PhoneScreen\";" },
+]
+
+[[suites.tests]]
+name = "an assignment between that could run more keeps it apart: to what a call made, a hoisted function, a setter-like name, or a value that runs"
+input.before = """
+const PhoneScreen = () => null;
+const Made = make();
+const Next = () => null;
+Made.displayName = "Made";
+Next.displayName = "Next";
+const Third = () => null;
+function Hoisted() {}
+Hoisted.displayName = "Hoisted";
+Third.displayName = "Third";
+const Fourth = () => null;
+const Fifth = () => null;
+Fifth.name = "Fifth";
+Fourth.displayName = "Fourth";
+const Sixth = () => null;
+const Seventh = () => null;
+Seventh.displayName = label();
+Sixth.displayName = "Sixth";
+"""
+input.after = """
+const PhoneScreen = () => null;
+const Made = make();
+const Next = () => null;
+Made.displayName = "Made";
+Next.displayName = "Next!";
+const Third = () => null;
+function Hoisted() {}
+Hoisted.displayName = "Hoisted";
+Third.displayName = "Third!";
+const Fourth = () => null;
+const Fifth = () => null;
+Fifth.name = "Fifth";
+Fourth.displayName = "Fourth!";
+const Sixth = () => null;
+const Seventh = () => null;
+Seventh.displayName = label();
+Sixth.displayName = "Sixth!";
+"""
+output = [
+  { status = "unchanged", label = "PhoneScreen" },
+  { status = "unchanged", label = "Made" },
+  { status = "unchanged", label = "Next" },
+  { status = "removed", label = "Next.displayName = \"Next\";" },
+  { status = "added", label = "Next.displayName = \"Next!\";" },
+  { status = "unchanged", label = "Third" },
+  { status = "unchanged", label = "Hoisted" },
+  { status = "removed", label = "Third.displayName = \"Third\";" },
+  { status = "added", label = "Third.displayName = \"Third!\";" },
+  { status = "unchanged", label = "Fourth" },
+  { status = "unchanged", label = "Fifth" },
+  { status = "removed", label = "Fourth.displayName = \"Fourth\";" },
+  { status = "added", label = "Fourth.displayName = \"Fourth!\";" },
+  { status = "unchanged", label = "Sixth" },
+  { status = "unchanged", label = "Seventh" },
+  { status = "removed", label = "Sixth.displayName = \"Sixth\";" },
+  { status = "added", label = "Sixth.displayName = \"Sixth!\";" },
 ]
 
 [[suites]]

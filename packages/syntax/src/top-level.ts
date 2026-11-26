@@ -132,6 +132,8 @@ export function extractTopLevel(root: Node): TopLevel {
   // The declarations since the last statement that runs something, by name:
   // a `X.displayName = ...` after X's is part of X (see below).
   let declaredSince = new Map<string, number>();
+  // Of those, the ones a `const`/`let`/`var` set to a function made right there.
+  const freshFunctions = new Set<string>();
   // The unit of the statement before this one (comments aside); null for an import or export list.
   let previousUnit: number | null = null;
 
@@ -257,8 +259,14 @@ export function extractTopLevel(root: Node): TopLevel {
         if (!ambient && !declarationRunsNothing(declaration)) {
           declaredSince = new Map();
         }
+        const functions = functionValueNames(declaration);
         for (const name of names) {
           declaredSince.set(name, unit);
+          if (functions.includes(name)) {
+            freshFunctions.add(name);
+          } else {
+            freshFunctions.delete(name);
+          }
         }
         previousUnit = unit;
         continue;
@@ -277,9 +285,9 @@ export function extractTopLevel(root: Node): TopLevel {
     if (statement.type === "expression_statement") {
       // `PhoneScreen.displayName = "PhoneScreen";` after PhoneScreen's
       // declaration, with nothing between that runs (comments, functions,
-      // types, plain values): part of PhoneScreen, not code of its own.
-      // Anything between that runs, an assignment to another declaration
-      // too, and it stays a statement.
+      // types, plain values, and assignments like this one that run nothing
+      // but the assignment): part of PhoneScreen, not code of its own.
+      // Anything between that runs, and it stays a statement.
       const assignment = statement.namedChildren[0];
       const target = assignment?.type === "assignment_expression" ? assignment.childForFieldName("left") : null;
       const object = target?.type === "member_expression" ? target.childForFieldName("object") : null;
@@ -308,8 +316,24 @@ export function extractTopLevel(root: Node): TopLevel {
         } else {
           owner.parts.push({ startLine: attached && commentsFrom !== null ? commentsFrom : line, endLine });
         }
-        // It runs: only more of the owner's own can join it from here.
-        declaredSince = new Map(owner.names.map((name) => [name, ownerIndex]));
+        // Nothing runs but the assignment when it sets a plain property on a
+        // function made right above (with nothing between that ran, so no
+        // other code has seen it), to a value that runs nothing. A function
+        // declaration doesn't count: it exists before the file's first line
+        // runs. `name`, `length`, `caller`, `arguments` and `__proto__` throw
+        // or call a setter. Unsure, and only more of the owner's own can join
+        // it from here.
+        const property = target?.childForFieldName("property");
+        const runsOnlyTheAssignment =
+          object !== null &&
+          object !== undefined &&
+          freshFunctions.has(object.text) &&
+          property?.type === "property_identifier" &&
+          !["name", "length", "caller", "arguments", "__proto__"].includes(property.text) &&
+          valueRunsNothing(assignment?.childForFieldName("right") ?? null);
+        if (!runsOnlyTheAssignment) {
+          declaredSince = new Map(owner.names.map((name) => [name, ownerIndex]));
+        }
         previousUnit = ownerIndex;
         continue;
       }
@@ -331,8 +355,14 @@ export function extractTopLevel(root: Node): TopLevel {
       if (!declarationRunsNothing(statement)) {
         declaredSince = new Map();
       }
+      const functions = functionValueNames(statement);
       for (const name of names) {
         declaredSince.set(name, unit);
+        if (functions.includes(name)) {
+          freshFunctions.add(name);
+        } else {
+          freshFunctions.delete(name);
+        }
       }
       previousUnit = unit;
     } else {
@@ -574,6 +604,21 @@ function declarationRunsNothing(node: Node): boolean {
     default:
       return false;
   }
+}
+
+/** The names a `const`/`let`/`var` sets to a function made right there (`const X = () => ...`). */
+function functionValueNames(node: Node): Array<string> {
+  if (node.type !== "lexical_declaration" && node.type !== "variable_declaration") return [];
+  return node.namedChildren.flatMap((declarator) => {
+    if (declarator?.type !== "variable_declarator") return [];
+    const name = declarator.childForFieldName("name");
+    let value = declarator.childForFieldName("value");
+    while (value !== null && value.type === "parenthesized_expression") {
+      value = value.namedChildren.find((child) => child !== null && child.type !== "comment") ?? null;
+    }
+    const isFunction = value?.type === "arrow_function" || value?.type === "function_expression" || value?.type === "function" || value?.type === "generator_function";
+    return name?.type === "identifier" && isFunction ? [name.text] : [];
+  });
 }
 
 /**
