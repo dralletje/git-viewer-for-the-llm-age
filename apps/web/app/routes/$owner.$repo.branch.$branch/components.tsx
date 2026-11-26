@@ -1,4 +1,4 @@
-import { memo, type ReactNode } from "react";
+import { Fragment, memo, type ReactNode } from "react";
 import { Form, Link } from "react-router";
 import type { Commit } from "@room/git";
 import { formatDate } from "#/paths.ts";
@@ -18,7 +18,7 @@ type ListedCommit = Commit & {
   selected: boolean;
   /** Part of the comparison being shown. */
   inComparison: boolean;
-  /** Other branches whose latest commit this is, each linking to "compare with it". */
+  /** Other branches whose latest commit this is, drawn as a line above it, each linking to "compare with it". */
   tips: Array<{ name: string; href: string }>;
 };
 
@@ -62,40 +62,46 @@ export const CommitList = memo(function CommitList({
       )}
       <ol>
         {commits.map((commit) => (
-          <li
-            key={commit.sha}
-            className={`border-l-2 ${
-              commit.selected
-                ? "border-blue-600 bg-blue-50 dark:bg-blue-950/40"
-                : commit.inComparison
-                  ? "border-sky-400 bg-sky-50/60 dark:border-sky-700 dark:bg-sky-950/30"
-                  : "border-transparent"
-            }`}
-          >
-            <Link to={commit.href} aria-current={commit.selected ? "page" : undefined} className="block px-4 py-2 hover:bg-neutral-50/80 dark:hover:bg-neutral-900/80">
-              <div className="line-clamp-2 text-sm font-medium">{commit.subject}</div>
-              <div className="mt-0.5 flex gap-2 text-xs text-neutral-500">
-                <span className="truncate">{commit.authorName}</span>
-                <span className="shrink-0">{formatDate(commit.authorDate)}</span>
-                {commit.parents.length > 1 && <span className="shrink-0">merge</span>}
-                <code className="ml-auto shrink-0">{commit.sha.slice(0, 7)}</code>
-              </div>
-            </Link>
+          <Fragment key={commit.sha}>
+            {/* Where another branch ends: a line above its latest commit, so
+                everything under the line is in that branch, and nothing above. */}
             {commit.tips.length > 0 && (
-              <div className="flex flex-wrap gap-1 px-4 pb-2">
-                {commit.tips.map((tip) => (
-                  <Link
-                    key={tip.name}
-                    to={tip.href}
-                    title={`${tip.name} ends here. Show what this branch changed since.`}
-                    className="max-w-full truncate rounded border border-violet-300 bg-violet-50 px-1.5 font-mono text-[11px] text-violet-900 hover:bg-violet-100 dark:border-violet-800 dark:bg-violet-950/50 dark:text-violet-200"
-                  >
-                    {tip.name}
-                  </Link>
-                ))}
-              </div>
+              <li className="flex items-center gap-2 px-4 pt-2">
+                <div className="flex min-w-0 flex-wrap gap-1">
+                  {commit.tips.map((tip) => (
+                    <Link
+                      key={tip.name}
+                      to={tip.href}
+                      title={`${tip.name} is everything below this line. Show what this branch changed since.`}
+                      className="max-w-full truncate rounded border border-violet-300 bg-violet-50 px-1.5 font-mono text-[11px] text-violet-900 hover:bg-violet-100 dark:border-violet-800 dark:bg-violet-950/50 dark:text-violet-200"
+                    >
+                      {tip.name}
+                    </Link>
+                  ))}
+                </div>
+                <div className="h-px flex-1 bg-violet-300 dark:bg-violet-800" />
+              </li>
             )}
-          </li>
+            <li
+              className={`border-l-2 ${
+                commit.selected
+                  ? "border-blue-600 bg-blue-50 dark:bg-blue-950/40"
+                  : commit.inComparison
+                    ? "border-sky-400 bg-sky-50/60 dark:border-sky-700 dark:bg-sky-950/30"
+                    : "border-transparent"
+              }`}
+            >
+              <Link to={commit.href} aria-current={commit.selected ? "page" : undefined} className="block px-4 py-2 hover:bg-neutral-50/80 dark:hover:bg-neutral-900/80">
+                <div className="line-clamp-2 text-sm font-medium">{commit.subject}</div>
+                <div className="mt-0.5 flex gap-2 text-xs text-neutral-500">
+                  <span className="truncate">{commit.authorName}</span>
+                  <span className="shrink-0">{formatDate(commit.authorDate)}</span>
+                  {commit.parents.length > 1 && <span className="shrink-0">merge</span>}
+                  <code className="ml-auto shrink-0">{commit.sha.slice(0, 7)}</code>
+                </div>
+              </Link>
+            </li>
+          </Fragment>
         ))}
       </ol>
     </div>
