@@ -26,6 +26,8 @@ export type ModuleUnit = {
   /** 1-based, from the comments above it to its last line. */
   startLine: number;
   endLine: number;
+  /** More of its code further down (see TopLevelUnit's `parts`). */
+  parts: Array<{ startLine: number; endLine: number }>;
   /** The top-level names its code uses when it runs (its own names and types aside), imported names included. */
   uses: Array<string>;
   /** The globals its code uses. */
@@ -52,6 +54,7 @@ export function moduleGraph(topLevel: TopLevel, imports: Array<Import>, globals:
       onLoad: unit.kind === "statement",
       startLine: unit.startLine,
       endLine: unit.endLine,
+      parts: unit.parts.map((part) => ({ startLine: part.startLine, endLine: part.endLine })),
       uses: [...new Set(unit.runtimeReferences)].filter((name) => declared.has(name) && !unit.names.includes(name)),
       globals: globals.filter((use) => inside(use.line)),
       loads: imports

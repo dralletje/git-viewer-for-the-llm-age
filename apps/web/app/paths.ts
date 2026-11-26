@@ -66,9 +66,19 @@ export function graphPath(repository: string, change: { head: string; base: stri
   return `${repository}/graph?${query}`;
 }
 
-/** One declaration's code at `head`, lines `start` to `end` of `path`: what an unchanged declaration in the graph fetches when opened. */
-export function declarationPath(repository: string, declaration: { head: string; path: string; start: number; end: number }): string {
+/**
+ * One declaration's code at `head`, lines `start` to `end` of `path`, and
+ * its `parts` further down (`parts=9-9,12-13`): what an unchanged
+ * declaration in the graph fetches when opened.
+ */
+export function declarationPath(
+  repository: string,
+  declaration: { head: string; path: string; start: number; end: number; parts: Array<{ startLine: number; endLine: number }> },
+): string {
   const query = new URLSearchParams({ head: declaration.head, path: declaration.path, start: String(declaration.start), end: String(declaration.end) });
+  if (declaration.parts.length > 0) {
+    query.set("parts", declaration.parts.map((part) => `${part.startLine}-${part.endLine}`).join(","));
+  }
   return `${repository}/declaration?${query}`;
 }
 

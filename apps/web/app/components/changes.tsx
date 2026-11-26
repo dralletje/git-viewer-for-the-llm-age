@@ -452,7 +452,7 @@ export function UnchangedDeclarations({ files, repository, head }: { files: Arra
                 status={declaration.status}
                 exported={declaration.exported}
                 line={declaration.line}
-                href={declarationPath(repository, { head, path: file.path, start: declaration.line, end: declaration.endLine })}
+                href={declarationPath(repository, { head, path: file.path, start: declaration.line, end: declaration.endLine, parts: declaration.parts })}
               />
             ))}
           </details>

@@ -8,7 +8,9 @@ import type { Route } from "./+types/route.ts";
 
 /**
  * One declaration's code as it is at `head` (a commit or a tree), lines
- * `start` to `end` of `path`, highlighted: what the list of unchanged
+ * `start` to `end` of `path` and its `parts` further down right after them
+ * (`parts=9-9,12-13`: a `X.displayName = ...` below other declarations),
+ * highlighted: what the list of unchanged
  * declarations under the files fetches when one is opened. They're in the
  * graph because they use what changed, but their files didn't change, so
  * the page doesn't have their code. No page of its own.
@@ -29,6 +31,19 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   const end = Number(query.get("end"));
   if (!/^[0-9a-f]{4,64}$/.test(head) || path === "" || !Number.isInteger(start) || !Number.isInteger(end) || start < 1 || end < start) {
     throw data("Which declaration?", 400);
+  }
+  const partsQuery = query.get("parts") ?? "";
+  if (partsQuery !== "" && !/^\d+-\d+(,\d+-\d+)*$/.test(partsQuery)) {
+    throw data("Which parts of the declaration?", 400);
+  }
+  const parts = partsQuery === "" ? [] : partsQuery.split(",").map((part) => part.split("-").map(Number));
+  // Each part further down than the one before, and in one piece.
+  let previousEnd = end;
+  for (const [partStart = 0, partEnd = 0] of parts) {
+    if (partStart <= previousEnd || partEnd < partStart) {
+      throw data("Which parts of the declaration?", 400);
+    }
+    previousEnd = partEnd;
   }
   const language = languageForPath(path);
   if (language === null) {
@@ -51,7 +66,10 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   const lines = text.split("\n");
   const tokenKinds: Array<string> = [];
   const rows: Array<DeclarationRow> = [];
-  for (let line = start; line <= Math.min(end, lines.length); line++) {
+  const numbers = [[start, end], ...parts].flatMap(([from = 0, to = 0]) =>
+    Array.from({ length: Math.max(0, Math.min(to, lines.length) - from + 1) }, (_, index) => from + index),
+  );
+  for (const line of numbers) {
     const tokens = analysis.lines[line - 1]?.map((token): [number, number] => {
       if (token.kind === null) return [token.text.length, -1];
       let index = tokenKinds.indexOf(token.kind);

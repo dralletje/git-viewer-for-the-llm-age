@@ -9,7 +9,16 @@ import type { ScannedFile } from "#/reach.ts";
  * repository. A file's statements (code that runs when it loads) are one
  * declaration: "top-level code".
  */
-export type Declaration = { id: string; path: string; label: string; startLine: number; endLine: number; exported: boolean };
+export type Declaration = {
+  id: string;
+  path: string;
+  label: string;
+  startLine: number;
+  endLine: number;
+  /** More of its code further down: a `X.displayName = ...` with other declarations between. */
+  parts: Array<{ startLine: number; endLine: number }>;
+  exported: boolean;
+};
 
 /** Something outside the repository's code that a declaration uses: a package (a name it imports from one), or a global that gives a capability. */
 export type Outside = { id: string; label: string; capability: Capability | null };
@@ -56,6 +65,8 @@ export function declarationGraph(files: Array<ScannedFile>, resolve: (from: stri
         label,
         startLine: known?.startLine ?? unit.startLine,
         endLine: unit.endLine,
+        // Units that share an id (overloads) are one range to the last one's end: parts above that are in it.
+        parts: [...(known?.parts ?? []), ...unit.parts].filter((part) => part.startLine > unit.endLine),
         exported: (known?.exported ?? false) || exportedAs.length > 0,
       });
       return id;

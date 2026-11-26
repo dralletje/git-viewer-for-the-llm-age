@@ -26,6 +26,8 @@ export type GraphDeclaration = {
   line: number;
   /** Where it ends, as `line` starts: with `line`, its code (see the declaration route). */
   endLine: number;
+  /** More of its code further down (a `X.displayName = ...` below other declarations): fetched with the rest. */
+  parts: Array<{ startLine: number; endLine: number }>;
   status: "changed" | "added" | "affected" | "removed" | "unchanged" | "outside";
   tag: string | null;
   exported: boolean;
@@ -208,7 +210,7 @@ export async function changesGraph(repository: Repository, change: { head: strin
       if (declarations[id] !== undefined) return;
       const outside = findOutside(now, id) ?? (then === null ? undefined : findOutside(then, id));
       if (outside !== undefined) {
-        declarations[id] = { id, path: "", label: outside.label, line: 0, endLine: 0, status: "outside", tag: tagOfOutside(outside.id, outside.capability, points), exported: false };
+        declarations[id] = { id, path: "", label: outside.label, line: 0, endLine: 0, parts: [], status: "outside", tag: tagOfOutside(outside.id, outside.capability, points), exported: false };
         return;
       }
       const current = now.declarations.get(id);
@@ -222,6 +224,7 @@ export async function changesGraph(repository: Repository, change: { head: strin
         label: declaration.label,
         line: declaration.startLine,
         endLine: declaration.endLine,
+        parts: declaration.parts,
         status: current === undefined || removed.has(id) ? "removed" : (status.get(id) ?? (distance.has(id) ? "affected" : "unchanged")),
         tag: point === null ? null : `point:${point}`,
         exported: declaration.exported,
