@@ -4,6 +4,7 @@ import type { ChangedFile } from "#/changes.server.ts";
 import { ChangesBody, ChangesView, FileTree, UnchangedDeclarations, ViewTabs, type ChangeView } from "#/components/changes.tsx";
 import { GraphPanel, GraphProvider } from "#/components/graphs.tsx";
 import { ReachPanel, ReachProvider } from "#/components/reach.tsx";
+import { OtherViewPanel } from "#/components/views/views.tsx";
 import { runsChanged } from "#/graphs.ts";
 import { fileChangesPath } from "#/paths.ts";
 
@@ -68,13 +69,24 @@ export function ChangesPage({
     asked === "combined" ||
     asked === "flat" ||
     asked === "folders" ||
-    asked === "nested"
+    asked === "nested" ||
+    asked === "points" ||
+    asked === "zoom" ||
+    asked === "rings" ||
+    asked === "per-change" ||
+    asked === "structure" ||
+    asked === "matrix" ||
+    asked === "order" ||
+    asked === "heatmap"
       ? asked
       : "reach";
   // Ripple, with or without file boxes: the graph stays in the top of the
   // code while the files scroll below it, so a node clicked shows its code
   // under the graph (see GraphFrame).
-  const graph = view === "combined" || view === "flat" || view === "folders" || view === "nested";
+  const ripple = view === "combined" || view === "flat" || view === "folders" || view === "nested";
+  // The other ways to show the same declaration graph (see components/views/).
+  const other = view === "points" || view === "zoom" || view === "rings" || view === "per-change" || view === "structure" || view === "matrix" || view === "order" || view === "heatmap";
+  const graph = ripple || other;
   // The views that show declarations are about what runs: a file where only
   // types, comments or formatting changed isn't on them, nor in their tree.
   // The line diff and imports & exports show every file.
@@ -94,6 +106,14 @@ export function ChangesPage({
     { view: "flat" as const, label: "Ripple, no file boxes", href: withView({ pathname, search }, "flat"), experimental: true },
     { view: "folders" as const, label: "Ripple, folder boxes", href: withView({ pathname, search }, "folders"), experimental: true },
     { view: "nested" as const, label: "Ripple, nested folders", href: withView({ pathname, search }, "nested"), experimental: true },
+    { view: "points" as const, label: "Points first", href: withView({ pathname, search }, "points"), experimental: true },
+    { view: "zoom" as const, label: "Zoom to summarise", href: withView({ pathname, search }, "zoom"), experimental: true },
+    { view: "rings" as const, label: "Distance rings", href: withView({ pathname, search }, "rings"), experimental: true },
+    { view: "per-change" as const, label: "Per change", href: withView({ pathname, search }, "per-change"), experimental: true },
+    { view: "structure" as const, label: "Structure only", href: withView({ pathname, search }, "structure"), experimental: true },
+    { view: "matrix" as const, label: "Matrix", href: withView({ pathname, search }, "matrix"), experimental: true },
+    { view: "order" as const, label: "Reading order", href: withView({ pathname, search }, "order"), experimental: true },
+    { view: "heatmap" as const, label: "Heat map", href: withView({ pathname, search }, "heatmap"), experimental: true },
   ];
 
   return (
@@ -103,7 +123,8 @@ export function ChangesPage({
           {header}
           <ViewTabs current={view} tabs={tabs} />
           {view === "reach" && <ReachPanel />}
-          {graph && <GraphPanel view={view} files={graphFiles} pageTitle={title} />}
+          {ripple && <GraphPanel view={view} files={graphFiles} pageTitle={title} />}
+          {other && <OtherViewPanel view={view} files={graphFiles} pageTitle={title} />}
           <ChangesBody entries={shown} view={view} />
           {/* The rest of what the graph draws, in the same column: their files didn't change, their code is fetched as it is at the head. */}
           {graph && <UnchangedDeclarations files={graphFiles} repository={repository} head={"commit" in range ? range.commit : range.to} />}

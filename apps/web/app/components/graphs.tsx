@@ -109,7 +109,7 @@ export function GraphPanel({ view, files, pageTitle }: { view: ChangeView; files
   );
 }
 
-function GraphNote({ children }: { children: ReactNode }) {
+export function GraphNote({ children }: { children: ReactNode }) {
   return <p className="mt-2 rounded-md border border-neutral-200 px-4 py-3 text-xs text-neutral-500 dark:border-neutral-800">{children}</p>;
 }
 
@@ -119,7 +119,7 @@ function GraphNote({ children }: { children: ReactNode }) {
  * legend) scrolls away above it; `barTitle` stays, on the bar over the
  * drawing.
  */
-function GraphFrame({ title, legend, graph, empty, barTitle }: { title: string; legend: ReactNode; graph: Graph; empty: string; barTitle: string }) {
+export function GraphFrame({ title, legend, graph, empty, barTitle }: { title: string; legend: ReactNode; graph: Graph; empty: string; barTitle: string }) {
   // Which layout draws it: ELK, or dagre to compare.
   const [engine, setEngine] = useState<"elk" | "dagre">("elk");
 
@@ -401,7 +401,7 @@ function GraphCanvas({ layout, roundedCorners }: { layout: GraphLayout; roundedC
 const canvasButton =
   "min-w-7 rounded border border-neutral-300 bg-white/90 px-1.5 py-0.5 text-neutral-700 shadow-sm hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-900/90 dark:text-neutral-200 dark:hover:bg-neutral-800";
 
-function Swatch({ className, children }: { className: string; children: ReactNode }) {
+export function Swatch({ className, children }: { className: string; children: ReactNode }) {
   return (
     <span className="inline-flex items-center gap-1">
       <span className={`inline-block h-3 w-4 rounded-sm border ${className}`} />
@@ -410,7 +410,7 @@ function Swatch({ className, children }: { className: string; children: ReactNod
   );
 }
 
-function Line({ className, dashed = false, children }: { className: string; dashed?: boolean; children: ReactNode }) {
+export function Line({ className, dashed = false, children }: { className: string; dashed?: boolean; children: ReactNode }) {
   return (
     <span className="inline-flex items-center gap-1">
       <svg width="22" height="8" aria-hidden>

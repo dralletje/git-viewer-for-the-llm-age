@@ -39,7 +39,24 @@ export type ChangeEntry = {
  * - folders, nested: the same, with a box per folder instead of per file;
  *   nested: every folder worth a box, inside the one above it.
  */
-export type ChangeView = "declarations" | "lines" | "module" | "reach" | "combined" | "flat" | "folders" | "nested";
+export type ChangeView =
+  | "declarations"
+  | "lines"
+  | "module"
+  | "reach"
+  | "combined"
+  | "flat"
+  | "folders"
+  | "nested"
+  // Other ways to show the same declaration graph (see components/views/).
+  | "points"
+  | "zoom"
+  | "rings"
+  | "per-change"
+  | "structure"
+  | "matrix"
+  | "order"
+  | "heatmap";
 
 /** The views that show each file as its declarations. */
 function byDeclarations(view: ChangeView): boolean {
@@ -621,7 +638,7 @@ export const FileDiffView = memo(function FileDiffView({ entry, view }: { entry:
           file={file}
           declarations={file.declarations}
           // Ripple + import map is read declaration by declaration from the graph: all open.
-          openAll={view === "combined" || view === "flat" || view === "folders" || view === "nested"}
+          openAll={view !== "reach" && view !== "declarations" && view !== "lines" && view !== "module"}
           // The other views are read for what the code does: no list of what didn't change.
           listUnchanged={view === "declarations"}
         />
