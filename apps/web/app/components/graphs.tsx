@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { attachCanvas, type Canvas } from "@room/canvas";
+import { Canvas, type CanvasHandle } from "@dral/canvas-component";
 import { useFetcher } from "react-router";
 import type { ChangeView } from "#/components/changes.tsx";
 import type { ChangesGraph } from "#/graph.server.ts";
@@ -266,29 +266,21 @@ function GraphFrame({ title, legend, graph, empty, barTitle }: { title: string; 
 }
 
 /**
- * The drawing on a canvas (see @room/canvas): moved by dragging or
- * scrolling, zoomed by pinching, fitted at first. Follows the code: the
- * declaration being read below (ChangesView's "room:reading" event) is
- * marked, and moved into sight. Clicking a declaration focuses it: all but
- * the paths through it fade.
+ * The drawing on a canvas (see @dral/canvas-component): moved by dragging,
+ * scrolling or the keys, zoomed by pinching, fitted at first. Follows the
+ * code: the declaration being read below (ChangesView's "room:reading"
+ * event) is marked, and moved into sight. Clicking a declaration focuses
+ * it: all but the paths through it fade.
  */
 function GraphCanvas({ layout, roundedCorners }: { layout: GraphLayout; roundedCorners: boolean }) {
+  // Around the canvas and its buttons, the canvas's own size; and around the drawing.
   const viewport = useRef<HTMLDivElement>(null);
   const content = useRef<HTMLDivElement>(null);
-  const canvas = useRef<Canvas | null>(null);
+  const canvas = useRef<CanvasHandle>(null);
 
+  // Another layout: the whole graph again, never larger than drawn.
   useEffect(() => {
-    const frame = viewport.current;
-    const drawing = content.current;
-    if (frame === null || drawing === null) return;
-    const attached = attachCanvas(frame, drawing, { size: { width: layout.width, height: layout.height }, minScale: 0.05, maxScale: 3 });
-    // The whole graph at first, never larger than drawn.
-    attached.fit({ maxScale: 1 });
-    canvas.current = attached;
-    return () => {
-      attached.destroy();
-      canvas.current = null;
-    };
+    canvas.current?.fit();
   }, [layout]);
 
   // Focus on click: the paths through the clicked declaration, the rest
@@ -379,10 +371,12 @@ function GraphCanvas({ layout, roundedCorners }: { layout: GraphLayout; roundedC
   }, [layout]);
 
   return (
-    <div ref={viewport} className="relative h-full w-full cursor-grab select-none">
-      <div ref={content} className="absolute left-0 top-0">
-        <GraphDrawing layout={layout} roundedCorners={roundedCorners} />
-      </div>
+    <div ref={viewport} className="relative h-full w-full">
+      <Canvas ref={canvas} minScale={0.05} maxScale={3} aria-label="Graph of the changes" className="h-full w-full cursor-grab select-none">
+        <div ref={content}>
+          <GraphDrawing layout={layout} roundedCorners={roundedCorners} />
+        </div>
+      </Canvas>
       <div className="absolute bottom-2 right-2 flex gap-1 text-xs">
         <button type="button" onClick={() => canvas.current?.zoomBy(1.25)} title="Zoom in" className={canvasButton}>
           +
@@ -390,7 +384,7 @@ function GraphCanvas({ layout, roundedCorners }: { layout: GraphLayout; roundedC
         <button type="button" onClick={() => canvas.current?.zoomBy(0.8)} title="Zoom out" className={canvasButton}>
           −
         </button>
-        <button type="button" onClick={() => canvas.current?.fit({ maxScale: 1, animate: true })} title="The whole graph" className={canvasButton}>
+        <button type="button" onClick={() => canvas.current?.fit({ animate: true })} title="The whole graph" className={canvasButton}>
           Fit
         </button>
       </div>

@@ -97,7 +97,7 @@ no build step and export their `.ts` source.
 | `packages/diff` (`@room/diff`) | Parses git's unified diff into files, hunks and lines. Every later view works on this model, never on diff text. |
 | `packages/git` (`@room/git`) | Talks to `git`: clones a GitHub repository (bare, blobs on demand) into `~/.cache/behind-the-room/repos` (or `$ROOM_CACHE`), lists branches and commits, and returns a commit with its parsed diff. |
 | `packages/syntax` (`@room/syntax`) | tree-sitter (WASM) for TS, TSX and JS: parses a whole file once and returns its highlighted lines, imports and exports; scans a file for a whole-repository pass (`scanSource`: its uses of globals, with scopes, and its module graph); compares two versions' imports per module, and exports per name through the file's top level as a graph: an export is "changed" when its own code changed (formatting aside), "affected" when top-level code it uses did (with the path), and changes no export reaches are listed. |
-| `packages/canvas` (`@room/canvas`) | A pan and zoom canvas for the graph: drag, scroll, pinch, fit. No framework. |
+| `packages/canvas-component` (`@dral/canvas-component`) | `<Canvas>`, a React pan and zoom viewport for the graph: drag, scroll, pinch, keys, fit. |
 | `apps/web` (`@room/web`) | React Router 8 in framework mode. `route.tsx` holds the decisions; `components.tsx` next to it holds the markup and styling. |
 
 The app clones over HTTPS with whatever git credentials the machine has, so

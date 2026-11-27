@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>@room/canvas demo</title>
+    <title>@dral/canvas-component demo</title>
     <style>
       :root {
         color-scheme: light dark;
@@ -12,6 +12,8 @@
       body {
         margin: 0;
         padding: 16px;
+      }
+      #root {
         display: grid;
         gap: 12px;
       }
@@ -26,19 +28,19 @@
         gap: 4px;
         align-items: center;
       }
-      #viewport {
-        border: 1px solid #8888;
+      /* A thick border, so a zoom that forgets it turns around the wrong point. */
+      .viewport {
+        border: 6px solid #8886;
         border-radius: 6px;
         background: repeating-conic-gradient(#8881 0 25%, transparent 0 50%) 0 0 / 24px 24px;
         cursor: grab;
         user-select: none;
       }
-      #content {
-        position: absolute;
-        left: 0;
-        top: 0;
-        width: 2400px;
-        height: 1600px;
+      .viewport:focus-visible {
+        outline: 3px solid #36f;
+      }
+      .drawing {
+        position: relative;
         outline: 2px dashed #8886;
       }
       .card {
@@ -62,7 +64,7 @@
         gap: 12px;
         font: 12px ui-monospace, monospace;
       }
-      #log {
+      .log {
         max-height: 160px;
         overflow: auto;
         margin: 0;
@@ -70,24 +72,7 @@
     </style>
   </head>
   <body>
-    <div class="controls">
-      <button type="button" id="fit">Fit</button>
-      <button type="button" id="zoom-in">+</button>
-      <button type="button" id="zoom-out">−</button>
-      <button type="button" id="show-corner">Show the far corner</button>
-      <button type="button" id="show-run">Show 5 cards in a row, quickly</button>
-      <button type="button" id="toggle-hidden">Hide the viewport</button>
-      <button type="button" id="fit-hidden">Fit while hidden, then show</button>
-      <label>Width <input type="range" id="width" min="20" max="100" value="100" />%</label>
-      <label>Height <input type="range" id="height" min="120" max="800" value="480" />px</label>
-    </div>
-    <div id="viewport" style="position: relative; height: 480px">
-      <div id="content"></div>
-    </div>
-    <div class="readouts">
-      <div>View: <span id="view"></span></div>
-      <pre id="log"></pre>
-    </div>
-    <script type="module" src="./demo.ts"></script>
+    <div id="root"></div>
+    <script type="module" src="./demo.tsx"></script>
   </body>
 </html>

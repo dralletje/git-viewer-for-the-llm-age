@@ -17,9 +17,9 @@
   },
   "dependencies": {
     "@dagrejs/dagre": "1.1.4",
+    "@dral/canvas-component": "workspace:*",
     "@react-router/node": "^8.5.2",
     "@react-router/serve": "^8.5.2",
-    "@room/canvas": "workspace:*",
     "@room/diff": "workspace:*",
     "@room/git": "workspace:*",
     "@room/syntax": "workspace:*",

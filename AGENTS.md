@@ -11,7 +11,7 @@ pnpm typecheck        # every package
 pnpm test             # every package (node:test)
 pnpm dev              # the app with every repository, http://localhost:4700
 room <repo...>        # apps/web/bin/room.ts: builds when the source changed, serves on 4800
-pnpm --filter @room/canvas demo   # the pan/zoom canvas on its own, http://localhost:4710
+pnpm --filter @dral/canvas-component demo   # the pan/zoom canvas on its own, http://localhost:4710
 ```
 
 Node 26 (pnpm downloads it), TypeScript run directly: no build step for the
@@ -71,7 +71,7 @@ A commit, a comparison or the work tree's current changes all render
    - It's laid out with ELK (`graph-layout-elk.ts`) or dagre (`layoutGraph`,
      to compare). dagre can't lay out some graphs in boxes, so it draws
      those without boxes.
-   - It's drawn as SVG on a pan/zoom canvas (`packages/canvas`), stuck to
+   - It's drawn as SVG on a pan/zoom canvas (`<Canvas>` from `packages/canvas-component`), stuck to
      the top of the code column.
 4. The graph and the page talk through window events:
    - `room:reading`: the declaration scrolled to, which the graph marks.
@@ -118,5 +118,5 @@ Parsing is in `points.ts` and `rules.server.ts`, and the reading in
 | `packages/diff` | Parses git's unified diff. |
 | `packages/git` | Talks to `git`: local repositories in place, GitHub ones cloned bare into `~/.cache/behind-the-room/repos`. Branches (local, then origin's), commits, comparisons, fetch. |
 | `packages/syntax` | tree-sitter for TS/TSX/JS: highlighting, imports and exports, the module graph, and comparing two versions declaration by declaration (`compare-declarations.ts`). |
-| `packages/canvas` | A framework-free pan/zoom canvas: drag, wheel, pinch, fit, show a rect, follows the viewport's size. View math in `view.ts`, tested. A change to how it handles input is tried in its demo (`demo/`, a page of linked cards with a button per behaviour) before the app. |
+| `packages/canvas-component` | `@dral/canvas-component`: `<Canvas>`, a React pan/zoom viewport (drag, wheel, pinch, keys, fit, show a rect, follows its own and its content's size). It exports only the component; the framework-free core (`canvas.ts`) and the view math (`view.ts`, unit tested) stay inside. A change to how it handles input is tried in its demo (`demo/`, a page of linked cards with a control per behaviour) before the app. Its tests run the demo in Chromium here, and in Firefox and WebKit in Playwright's Docker image (`mcr.microsoft.com/playwright:v1.65.1-noble`, pulled once; Docker must be running). |
 | `apps/web` | The React Router 8 app, and the `room` command (`bin/room.ts`). |
