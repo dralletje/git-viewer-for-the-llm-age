@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { attachCanvas, type Canvas } from "@room/canvas";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { PanZoom, type PanZoomHandle } from "@dral/pan-zoom";
 import { Swatch } from "#/components/graphs.tsx";
 import type { ViewProps } from "#/components/views/views.tsx";
 import { pathsThrough, ringsLayout, shortLabel, type RingNode, type RingsLayout } from "#/views/rings.ts";
@@ -164,23 +164,16 @@ function hrefOfNode(node: RingNode, hrefOf: Map<string, string>): string | null 
 function RingsCanvas({ layout, hrefOf }: { layout: RingsLayout; hrefOf: Map<string, string> }) {
   const viewport = useRef<HTMLDivElement>(null);
   const content = useRef<HTMLDivElement>(null);
-  const canvas = useRef<Canvas | null>(null);
+  const canvas = useRef<PanZoomHandle>(null);
   const [hovered, setHovered] = useState<string | null>(null);
   const [pinned, setPinned] = useState<string | null>(null);
   const [reading, setReading] = useState<string | null>(null);
 
-  useEffect(() => {
-    const frame = viewport.current;
-    const drawing = content.current;
-    if (frame === null || drawing === null) return;
-    const attached = attachCanvas(frame, drawing, { size: { width: layout.size, height: layout.size }, minScale: 0.03, maxScale: 3 });
-    // All the rings at first, never larger than drawn.
-    attached.fit({ maxScale: 1 });
-    canvas.current = attached;
-    return () => {
-      attached.destroy();
-      canvas.current = null;
-    };
+  // Other rings: all of them in sight again, never larger than drawn (<PanZoom> fits the first ones itself).
+  const firstLayout = useRef(layout);
+  useLayoutEffect(() => {
+    if (firstLayout.current === layout) return;
+    canvas.current?.fit({ maxScale: 1 });
   }, [layout]);
 
   const hrefs = useMemo(() => new Map(layout.nodes.map((node) => [node.id, hrefOfNode(node, hrefOf)])), [layout, hrefOf]);
@@ -244,7 +237,7 @@ function RingsCanvas({ layout, hrefOf }: { layout: RingsLayout; hrefOf: Map<stri
   return (
     <div
       ref={viewport}
-      className="relative h-full w-full cursor-grab select-none"
+      className="relative h-full w-full"
       onClick={(event) => {
         // Zoom and Fit keep the focus; the background lets go of it.
         if (event.target instanceof Element && event.target.closest("button") !== null) return;
@@ -252,61 +245,63 @@ function RingsCanvas({ layout, hrefOf }: { layout: RingsLayout; hrefOf: Map<stri
         setPinned(null);
       }}
     >
-      <div ref={content} className="absolute left-0 top-0">
-        <svg width={layout.size} height={layout.size} className="block font-mono text-[12px]" role="img" aria-label="Distance rings">
-          {layout.rings.map((ring) =>
-            ring.radius === 0 ? null : (
-              <circle key={ring.ring} cx={layout.center} cy={layout.center} r={ring.radius} fill="none" strokeDasharray="3 5" className="stroke-neutral-300 dark:stroke-neutral-700" />
-            ),
-          )}
-          {layout.edges.map((edge, index) => {
-            const on = lit?.edges.has(index) === true;
-            // In towards the changes amber, out from the one pointed at sky.
-            const inward = (layout.ring.get(edge.to) ?? 0) <= activeRing;
-            return (
-              <path
-                key={index}
-                d={edge.d}
-                fill="none"
-                strokeWidth={on ? 2 : 1}
-                className={
-                  lit === null
-                    ? "stroke-neutral-400 opacity-30 dark:stroke-neutral-500"
-                    : on
-                      ? inward
-                        ? "stroke-amber-500"
-                        : "stroke-sky-500"
-                      : "stroke-neutral-400 opacity-[0.06] dark:stroke-neutral-500"
-                }
+      <PanZoom ref={canvas} minScale={0.03} maxScale={3} aria-label="Distance rings of the changes" className="h-full w-full cursor-grab select-none">
+        <div ref={content}>
+          <svg width={layout.size} height={layout.size} className="block font-mono text-[12px]" role="img" aria-label="Distance rings">
+            {layout.rings.map((ring) =>
+              ring.radius === 0 ? null : (
+                <circle key={ring.ring} cx={layout.center} cy={layout.center} r={ring.radius} fill="none" strokeDasharray="3 5" className="stroke-neutral-300 dark:stroke-neutral-700" />
+              ),
+            )}
+            {layout.edges.map((edge, index) => {
+              const on = lit?.edges.has(index) === true;
+              // In towards the changes amber, out from the one pointed at sky.
+              const inward = (layout.ring.get(edge.to) ?? 0) <= activeRing;
+              return (
+                <path
+                  key={index}
+                  d={edge.d}
+                  fill="none"
+                  strokeWidth={on ? 2 : 1}
+                  className={
+                    lit === null
+                      ? "stroke-neutral-400 opacity-30 dark:stroke-neutral-500"
+                      : on
+                        ? inward
+                          ? "stroke-amber-500"
+                          : "stroke-sky-500"
+                        : "stroke-neutral-400 opacity-[0.06] dark:stroke-neutral-500"
+                  }
+                />
+              );
+            })}
+            {layout.rings.map((ring) => (
+              <text
+                key={ring.ring}
+                x={layout.center}
+                y={ring.radius === 0 ? layout.center - 18 : layout.center - ring.radius - 6}
+                textAnchor="middle"
+                className="fill-neutral-500 font-sans text-[12px] font-semibold dark:fill-neutral-400"
+              >
+                {ring.ring === 0 ? `what changed · ${ring.count}` : `${ring.ring} ${ring.ring === 1 ? "step" : "steps"} · ${ring.count}`}
+              </text>
+            ))}
+            {layout.nodes.map((node) => (
+              <RingPill
+                key={node.id}
+                node={node}
+                center={layout.center}
+                href={hrefs.get(node.id) ?? null}
+                faded={lit !== null && !lit.nodes.has(node.id)}
+                current={node.id === reading}
+                chosen={node.id === active}
+                onHover={(on) => setHovered(on ? node.id : null)}
+                onChoose={() => setPinned(node.id)}
               />
-            );
-          })}
-          {layout.rings.map((ring) => (
-            <text
-              key={ring.ring}
-              x={layout.center}
-              y={ring.radius === 0 ? layout.center - 18 : layout.center - ring.radius - 6}
-              textAnchor="middle"
-              className="fill-neutral-500 font-sans text-[12px] font-semibold dark:fill-neutral-400"
-            >
-              {ring.ring === 0 ? `what changed · ${ring.count}` : `${ring.ring} ${ring.ring === 1 ? "step" : "steps"} · ${ring.count}`}
-            </text>
-          ))}
-          {layout.nodes.map((node) => (
-            <RingPill
-              key={node.id}
-              node={node}
-              center={layout.center}
-              href={hrefs.get(node.id) ?? null}
-              faded={lit !== null && !lit.nodes.has(node.id)}
-              current={node.id === reading}
-              chosen={node.id === active}
-              onHover={(on) => setHovered(on ? node.id : null)}
-              onChoose={() => setPinned(node.id)}
-            />
-          ))}
-        </svg>
-      </div>
+            ))}
+          </svg>
+        </div>
+      </PanZoom>
       <div className="absolute bottom-2 right-2 flex gap-1 text-xs">
         <button type="button" onClick={() => canvas.current?.zoomBy(1.25)} title="Zoom in" className={canvasButton}>
           +

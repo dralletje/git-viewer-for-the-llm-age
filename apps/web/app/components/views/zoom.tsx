@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { attachCanvas, type Canvas } from "@room/canvas";
+import { PanZoom, type PanZoomHandle } from "@dral/pan-zoom";
 import { GraphNote, Line, Swatch } from "#/components/graphs.tsx";
 import type { ViewProps } from "#/components/views/views.tsx";
 import { layoutGraphElk } from "#/graph-layout-elk.ts";
@@ -196,17 +196,16 @@ function ZoomCanvas({
 }) {
   const viewport = useRef<HTMLDivElement>(null);
   const content = useRef<HTMLDivElement>(null);
-  const canvas = useRef<Canvas | null>(null);
+  const canvas = useRef<PanZoomHandle>(null);
 
   // Before the browser paints: no frame of the new drawing at the old view.
+  // <PanZoom> stays attached across drawings; its own layout effect ran first.
+  const firstLayout = useRef(true);
   useLayoutEffect(() => {
-    const frame = viewport.current;
-    const drawing = content.current;
-    if (frame === null || drawing === null) return;
-    const before = canvas.current?.view() ?? null;
-    canvas.current?.destroy();
-    const attached = attachCanvas(frame, drawing, { size: { width: layout.width, height: layout.height }, minScale: 0.05, maxScale: 3 });
-    canvas.current = attached;
+    const attached = canvas.current;
+    if (attached === null) return;
+    const before = firstLayout.current ? null : attached.view();
+    firstLayout.current = false;
     const at = anchor.current;
     anchor.current = null;
     const now = at === null || before === null ? undefined : (layout.groups.find((group) => group.id === at.id) ?? layout.nodes.find((node) => node.id === at.id));
@@ -220,13 +219,6 @@ function ZoomCanvas({
     attached.setView({ x: at.x - left * before.scale, y: at.y - top * before.scale, scale: before.scale });
     attached.show({ x: left, y: top - 20, width: now.width, height: now.height + 20 }, { animate: true, margin: 24 });
   }, [layout]);
-  useEffect(
-    () => () => {
-      canvas.current?.destroy();
-      canvas.current = null;
-    },
-    [],
-  );
 
   /** Where a rect of the drawing is on screen now, relative to the viewport: what a click keeps in place. */
   const onScreen = (x: number, y: number) => {
@@ -255,10 +247,12 @@ function ZoomCanvas({
   }, [layout, tree]);
 
   return (
-    <div ref={viewport} className="relative h-full w-full cursor-grab select-none">
-      <div ref={content} className="absolute left-0 top-0">
-        <ZoomDrawing layout={layout} tree={tree} counts={counts} onToggle={(id, x, y, open) => onToggle(id, onScreen(x, y), open)} />
-      </div>
+    <div ref={viewport} className="relative h-full w-full">
+      <PanZoom ref={canvas} minScale={0.05} maxScale={3} aria-label="Graph of the changes, by package" className="h-full w-full cursor-grab select-none">
+        <div ref={content}>
+          <ZoomDrawing layout={layout} tree={tree} counts={counts} onToggle={(id, x, y, open) => onToggle(id, onScreen(x, y), open)} />
+        </div>
+      </PanZoom>
       <div className="absolute bottom-2 right-2 flex gap-1 text-xs">
         <button type="button" onClick={() => canvas.current?.zoomBy(1.25)} title="Zoom in" className={canvasButton}>
           +
