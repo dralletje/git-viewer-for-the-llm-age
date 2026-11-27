@@ -1,5 +1,5 @@
 {
-  "name": "@room/canvas",
+  "name": "@dral/pan-zoom",
   "private": true,
   "type": "module",
   "exports": {
@@ -13,10 +13,18 @@
     "test": "node --test 'src/**/*.test.ts' 'demo/**/*.test.ts'",
     "demo": "vite demo --port 4710"
   },
+  "peerDependencies": {
+    "react": "^19.0.0"
+  },
   "devDependencies": {
+    "@dral/toml-tests": "5.2.0",
     "@dral/tsconfig": "catalog:",
     "@types/node": "catalog:",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
     "playwright": "1.65.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
     "typescript": "catalog:",
     "vite": "^8.3.8"
   }
