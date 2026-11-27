@@ -162,7 +162,8 @@ function Row({ node, data, hrefOf }: { node: ReachNode; data: ScannedGraph; href
     return (
       <span className="inline-flex flex-wrap items-baseline gap-x-2">
         <span className={`rounded border px-1.5 font-mono text-xs ${style.chip}`}>{declaration.label}</span>
-        <span className="text-xs text-neutral-500">{source === "global" ? "global" : source === declaration.label ? "package" : `from ${source}`}</span>
+        {/* Its name already says the package ("@medplum/core { MedplumClient }"): only a global says what it is. */}
+        {source === "global" && <span className="text-xs text-neutral-500">global</span>}
         {use}
       </span>
     );
