@@ -24,9 +24,9 @@ const pointShades = [
 
 /** A row's mark for what happened to its declaration, in the graphs' colours. */
 const statusMark: Record<string, string> = {
-  changed: "border-l-amber-400",
-  added: "border-l-green-500",
-  removed: "border-l-red-500",
+  changed: "bg-amber-400",
+  added: "bg-green-500",
+  removed: "bg-red-500",
 };
 
 const granularities: Array<{ value: Granularity; label: string }> = [
@@ -47,6 +47,9 @@ export function MatrixView({ data, files, pageTitle }: ViewProps) {
   const [granularity, setGranularity] = useState<Granularity>("package");
   // The cell whose declarations are listed under its row.
   const [open, setOpen] = useState<{ row: string; column: string } | null>(null);
+  // A commit that adds a whole package has thousands of new declarations: the
+  // ones that reach the most first, the rest on asking, so the page stays quick.
+  const [everyRow, setEveryRow] = useState(false);
   const matrix = useMemo(() => changeMatrix(data, granularity), [data, granularity]);
 
   const hrefOf = new Map(files.map((file) => [file.path, file.href]));
@@ -60,6 +63,7 @@ export function MatrixView({ data, files, pageTitle }: ViewProps) {
 
   const all = [...matrix.columns, ...matrix.points];
   const width = 2 + all.length;
+  const rows = everyRow ? matrix.rows : matrix.rows.slice(0, 100);
 
   return (
     <section className="mt-2 rounded-md border border-neutral-200 text-xs dark:border-neutral-800">
@@ -123,7 +127,7 @@ export function MatrixView({ data, files, pageTitle }: ViewProps) {
             </tr>
           </thead>
           <tbody>
-            {matrix.rows.map((row) => {
+            {rows.map((row) => {
               const openColumn = open?.row === row.declaration.id ? all.find((column) => column.key === open.column) : undefined;
               return (
                 <Fragment key={row.declaration.id}>
@@ -154,6 +158,18 @@ export function MatrixView({ data, files, pageTitle }: ViewProps) {
                 </Fragment>
               );
             })}
+            {rows.length < matrix.rows.length && (
+              <tr>
+                <td colSpan={width} className="border-b border-neutral-200 p-0 dark:border-neutral-800">
+                  <div className="sticky left-0 w-max px-2 py-1.5 text-neutral-500">
+                    {matrix.rows.length - rows.length} more changed declarations, reaching less.{" "}
+                    <button type="button" onClick={() => setEveryRow(true)} className="text-sky-700 hover:underline dark:text-sky-300">
+                      Show all {matrix.rows.length}
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            )}
           </tbody>
           <tfoot>
             <tr>
@@ -203,9 +219,10 @@ function RowHeader({ row, href }: { row: MatrixRow; href: string | null }) {
   return (
     <th
       scope="row"
-      className={`sticky left-0 z-10 w-64 max-w-64 min-w-64 border-r border-b border-l-4 border-neutral-200 bg-white px-2 py-0.5 text-left font-normal group-hover:bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-950 dark:group-hover:bg-neutral-900 ${statusMark[declaration.status] ?? ""}`}
+      className="sticky left-0 z-10 w-64 max-w-64 min-w-64 border-r border-b border-neutral-200 bg-white py-0.5 pr-2 pl-3 text-left font-normal group-hover:bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-950 dark:group-hover:bg-neutral-900"
       title={`${declaration.label} in ${declaration.path}: ${declaration.status}`}
     >
+      <span aria-hidden className={`absolute inset-y-0 left-0 w-1 ${statusMark[declaration.status] ?? ""}`} />
       <span className="block truncate font-mono text-neutral-900 dark:text-neutral-100">
         {href === null ? name : (
           <a href={href} className="hover:underline">

@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { GraphDeclaration } from "#/graph.server.ts";
 import type { ScannedGraph } from "#/graphs.ts";
-import { areaOf, changeMatrix, reachedFrom, shadeOf } from "#/views/matrix.ts";
+import { areaOf, changeMatrix, lengthenAlike, reachedFrom, shadeOf } from "#/views/matrix.ts";
 
 /** A declaration "<path>#<label>" with this status. */
 function declaration(id: string, status: GraphDeclaration["status"]): GraphDeclaration {
@@ -113,6 +113,21 @@ test("a point's cell lists the row's declaration and what it reaches that reach 
   assert.deepEqual(
     query?.cells.get("point:medplum")?.map((one) => one.label),
     ["query", "getUser"],
+  );
+});
+
+test("headers that read the same take more of their path until they don't", () => {
+  const columns = [
+    { key: "apps/portal/src/pages/dashboard", label: "pages/dashboard" },
+    { key: "apps/clinic/src/pages/dashboard", label: "pages/dashboard" },
+    { key: "apps/clinic/src/pages/tasks", label: "pages/tasks" },
+    { key: "apps/a/index.ts", label: "index.ts" },
+    { key: "apps/b/index.ts", label: "index.ts" },
+  ];
+  lengthenAlike(columns);
+  assert.deepEqual(
+    columns.map((column) => column.label),
+    ["portal/src/pages/dashboard", "clinic/src/pages/dashboard", "pages/tasks", "a/index.ts", "b/index.ts"],
   );
 });
 

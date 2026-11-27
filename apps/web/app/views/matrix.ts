@@ -115,7 +115,8 @@ export function changeMatrix(data: ScannedGraph, granularity: Granularity): Matr
   const columns: Array<MatrixColumn> = [...areas.values()]
     .map((area) => ({ key: area.key, label: area.label, title: area.title, kind: "area" as const, total: area.reached.size }))
     .sort((a, b) => b.total - a.total || a.title.localeCompare(b.title));
-  const pointColumns: Array<MatrixColumn> = [...points.entries()]
+  if (granularity !== "package") lengthenAlike(columns);
+  const pointColumns: Array<MatrixColumn> =[...points.entries()]
     .map(([target, ids]) => {
       const found = data.targets[target];
       return { key: `point:${target}`, label: found?.label ?? target, title: found?.about === null || found?.about === undefined ? (found?.label ?? target) : `${found.label}: ${found.about}`, kind: "point" as const, total: ids.size };
@@ -132,6 +133,29 @@ export function changeMatrix(data: ScannedGraph, granularity: Granularity): Matr
     max: Math.max(0, ...counts(columns.map((column) => column.key))),
     pointMax: Math.max(0, ...counts(pointColumns.map((column) => column.key))),
   };
+}
+
+/**
+ * Two headers that read the same ("pages/dashboard" in two apps) say which
+ * is which: each takes one more folder from its path until it stands apart.
+ */
+export function lengthenAlike(columns: Array<{ key: string; label: string }>): void {
+  for (;;) {
+    const byLabel = new Map<string, Array<{ key: string; label: string }>>();
+    for (const column of columns) byLabel.set(column.label, [...(byLabel.get(column.label) ?? []), column]);
+    let lengthened = false;
+    for (const alike of byLabel.values()) {
+      if (alike.length < 2) continue;
+      for (const column of alike) {
+        const parts = column.key.split("/");
+        const shown = column.label.split("/").length;
+        if (shown >= parts.length) continue;
+        column.label = parts.slice(-(shown + 1)).join("/");
+        lengthened = true;
+      }
+    }
+    if (!lengthened) return;
+  }
 }
 
 /**
