@@ -194,10 +194,14 @@ export function ringsLayout(data: ScannedGraph): RingsLayout {
     const total = at + 1 + labelSlots;
     const fits = (total * spacing) / (2 * Math.PI);
     const radius = Math.max(distance === 0 ? 50 : outerEdge + ringGap, fits);
-    const step = (2 * Math.PI) / total;
+    const angles = anglesOnRing(
+      info.map((entry) => entry.wanted),
+      slots,
+      radius,
+      labelSlots,
+    );
     info.forEach((entry, index) => {
-      const angle = top + (labelSlots / 2 + 0.5 + (slots[index] ?? 0)) * step;
-      nodes.set(entry.id, nodeOf(data, entry, distance, angle, radius, pillLength(entry.label)));
+      nodes.set(entry.id, nodeOf(data, entry, distance, top + (angles[index] ?? 0), radius, pillLength(entry.label)));
     });
     rings.push({ ring: distance, radius, count: info.length });
     outerEdge = radius + longest;
@@ -229,6 +233,46 @@ export function ringsLayout(data: ScannedGraph): RingsLayout {
     });
   }
   return { size: center * 2, center, rings, nodes: [...nodes.values()], edges: drawnEdges, ring, unreached };
+}
+
+/**
+ * Each declaration's angle on its ring, from the top, clockwise. A ring with
+ * room puts each one near what it uses on the ring inside (`wanted`), so the
+ * curves between rings stay short, and pushes on the ones that would sit
+ * closer than `slots` say (a pill apart, more between files and packages).
+ * A crowded ring, or the middle (nothing to be near), goes round evenly.
+ * The top, `labelSlots` wide, is kept for the ring's name.
+ */
+export function anglesOnRing(wanted: Array<number | null>, slots: Array<number>, radius: number, labelSlots: number): Array<number> {
+  const last = slots.at(-1) ?? 0;
+  const total = last + 1 + labelSlots;
+  const even = slots.map((slot) => (labelSlots / 2 + 0.5 + slot) * ((2 * Math.PI) / total));
+  if (wanted.every((angle) => angle === null)) return even;
+  // A pill apart at least; on a roomy ring a third of the even spacing, so a bunch behind one declaration fans out and stays readable.
+  const step = Math.max(spacing / radius, ((2 * Math.PI) / total) * 0.35);
+  const lowest = ((labelSlots / 2) * spacing) / radius;
+  const highest = 2 * Math.PI - lowest;
+  if ((last + 1) * step > highest - lowest) return even;
+  // Where each would like to be (one with no wish: where the one before is), then pushed apart in order.
+  const angles: Array<number> = [];
+  let previousWish = lowest;
+  wanted.forEach((wish, index) => {
+    const target = wish ?? previousWish;
+    previousWish = target;
+    const before = angles[index - 1];
+    const gap = (slots[index] ?? 0) - (slots[index - 1] ?? 0);
+    angles.push(before === undefined ? target : Math.max(target, before + gap * step));
+  });
+  // Pushing moved them on: back by the average, so they sit around their wishes; then inside the ring, clear of its name.
+  const drift = angles.reduce((sum, angle, index) => sum + angle - (wanted[index] ?? angle), 0) / angles.length;
+  let shift = -drift;
+  const first = (angles[0] ?? 0) + shift;
+  const end = (angles.at(-1) ?? 0) + shift;
+  if (first < lowest) shift += lowest - first;
+  else if (end > highest) shift -= end - highest;
+  // Wishes all round the ring, pushed past its end: evenly after all.
+  if ((angles[0] ?? 0) + shift < lowest - 1e-9 || (angles.at(-1) ?? 0) + shift > highest + 1e-9) return even;
+  return angles.map((angle) => angle + shift);
 }
 
 function nodeOf(data: ScannedGraph, entry: { id: string; path: string; packageDir: string; label: string }, ring: number, angle: number, radius: number, length: number): RingNode {

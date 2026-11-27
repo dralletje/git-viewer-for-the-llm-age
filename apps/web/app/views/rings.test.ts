@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { ScannedGraph } from "#/graphs.ts";
-import { circularMean, distancesFrom, pathsThrough, ringsLayout, shortLabel } from "#/views/rings.ts";
+import { anglesOnRing, circularMean, distancesFrom, pathsThrough, ringsLayout, shortLabel } from "#/views/rings.ts";
 
 test("a declaration's ring is its shortest way from a change", () => {
   const edges = [
@@ -114,6 +114,26 @@ test("a crowded ring is wide enough for its pills side by side, a file's declara
   // Going round, each file comes up once.
   const files = ring.map((node) => node.path).filter((path, index, all) => path !== all[index - 1]);
   assert.equal(files.length, new Set(files).size);
+});
+
+test("a ring with room puts each declaration near what it uses, a pill apart, clear of the ring's name", () => {
+  const radius = 600;
+  const angles = anglesOnRing([1, 1, 1, 3], [0, 1, 2, 4], radius, 6);
+  // Around their wish, in order, at least a pill apart (19px along the ring).
+  assert.ok(Math.abs((angles[1] ?? 0) - 1) < 0.1);
+  assert.ok(((angles[1] ?? 0) - (angles[0] ?? 0)) * radius >= 18.9);
+  assert.ok(Math.abs((angles[3] ?? 0) - 3) < 0.2);
+  // Wished for at the top, where the name is: moved off it.
+  const top = anglesOnRing([0, 0.01], [0, 1], radius, 6);
+  assert.ok((top[0] ?? 0) * radius >= 3 * 19 - 0.01);
+});
+
+test("a full ring, or the middle, goes round evenly", () => {
+  const middle = anglesOnRing([null, null, null], [0, 1, 2], 100, 4);
+  assert.ok(Math.abs((middle[1] ?? 0) - (middle[0] ?? 0) - ((middle[2] ?? 0) - (middle[1] ?? 0))) < 1e-9);
+  const slots = Array.from({ length: 30 }, (_, index) => index);
+  const full = anglesOnRing(slots.map(() => 1), slots, (34 * 19) / (2 * Math.PI), 4);
+  assert.ok((full.at(-1) ?? 0) - (full[0] ?? 0) > 4);
 });
 
 test("long labels lose their start", () => {
