@@ -297,6 +297,9 @@ importers:
 
   packages/pan-zoom:
     devDependencies:
+      '@dral/toml-tests':
+        specifier: 5.2.0
+        version: 5.2.0
       '@dral/tsconfig':
         specifier: 'catalog:'
         version: 1.8.0

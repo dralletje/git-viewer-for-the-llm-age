@@ -1,0 +1,92 @@
+# wheelKind: a guess, from the first wheel event of a gesture, at what sent
+# it. `input` is the event's deltaX, deltaY, deltaMode (0 pixels, 1 lines,
+# 2 pages) and, where the browser has it, wheelDeltaY; `output` is "mouse",
+# "touchpad" or "unclear". <PanZoom wheel="auto"> zooms for "mouse" and pans
+# for the rest.
+
+name = "wheel kind"
+
+[[tests]]
+name = "a notch of a mouse wheel in Chrome on Windows"
+input = { deltaX = 0, deltaY = 100, deltaMode = 0, wheelDeltaY = -120 }
+output = "mouse"
+
+[[tests]]
+name = "a notch upwards"
+input = { deltaX = 0, deltaY = -100, deltaMode = 0, wheelDeltaY = 120 }
+output = "mouse"
+
+[[tests]]
+name = "a notch at 125% display scaling: more pixels, the same wheelDeltaY"
+input = { deltaX = 0, deltaY = 125, deltaMode = 0, wheelDeltaY = -120 }
+output = "mouse"
+
+[[tests]]
+name = "a notch at 133% scaling, a fractional step, still told by wheelDeltaY"
+input = { deltaX = 0, deltaY = 133.33333, deltaMode = 0, wheelDeltaY = -120 }
+output = "mouse"
+
+[[tests]]
+name = "two notches at once"
+input = { deltaX = 0, deltaY = 200, deltaMode = 0, wheelDeltaY = -240 }
+output = "mouse"
+
+[[tests]]
+name = "Firefox counts a notch in lines"
+input = { deltaX = 0, deltaY = 3, deltaMode = 1 }
+output = "mouse"
+
+[[tests]]
+name = "or pages, when set to scroll a page at a time"
+input = { deltaX = 0, deltaY = 1, deltaMode = 2 }
+output = "mouse"
+
+[[tests]]
+name = "Firefox in pixels, a large whole step"
+input = { deltaX = 0, deltaY = 100, deltaMode = 0 }
+output = "mouse"
+
+[[tests]]
+name = "a touchpad's two fingers, going a bit sideways"
+input = { deltaX = 1.5, deltaY = 4, deltaMode = 0, wheelDeltaY = -12 }
+output = "touchpad"
+
+[[tests]]
+name = "a touchpad straight down, a small step"
+input = { deltaX = 0, deltaY = 4, deltaMode = 0, wheelDeltaY = -12 }
+output = "unclear"
+
+[[tests]]
+name = "a touchpad step that happens to make wheelDeltaY 120, but small"
+input = { deltaX = 0, deltaY = 40, deltaMode = 0, wheelDeltaY = -120 }
+output = "unclear"
+
+[[tests]]
+name = "a touchpad's fractional step, without wheelDeltaY"
+input = { deltaX = 0, deltaY = 2.5, deltaMode = 0 }
+output = "unclear"
+
+[[tests]]
+name = "pixel-precise scrolling in Firefox and WebKit: wheelDeltaY is 3 times deltaY (Playwright's wheel there)"
+input = { deltaX = 0, deltaY = -100, deltaMode = 0, wheelDeltaY = 300 }
+output = "unclear"
+
+[[tests]]
+name = "a smooth-scrolling mouse looks like a touchpad"
+input = { deltaX = 0, deltaY = 6, deltaMode = 0, wheelDeltaY = -18 }
+output = "unclear"
+
+[[tests]]
+name = "shift + wheel scrolls sideways: moving is what's meant"
+input = { deltaX = 100, deltaY = 0, deltaMode = 0, wheelDeltaY = 0 }
+output = "touchpad"
+
+[[tests]]
+name = "sideways in lines, a tilt wheel in Firefox"
+input = { deltaX = 3, deltaY = 0, deltaMode = 1 }
+output = "touchpad"
+
+[[tests]]
+name = "nothing moved"
+input = { deltaX = 0, deltaY = 0, deltaMode = 0 }
+output = "unclear"

@@ -17,6 +17,7 @@
     "react": "^19.0.0"
   },
   "devDependencies": {
+    "@dral/toml-tests": "5.2.0",
     "@dral/tsconfig": "catalog:",
     "@types/node": "catalog:",
     "@types/react": "^19.3.0",

@@ -1,4 +1,5 @@
 import { fitView, resizedView, viewShowing, zoomAt, type Limits, type Rect, type Size, type View } from "#/view.ts";
+import { wheelKind } from "#/wheel-kind.ts";
 
 /**
  * What moved the view: the person using it (drag, wheel, pinch, keys), the
@@ -9,11 +10,13 @@ export type ChangeCause = "user" | "code" | "layout";
 
 export type PanZoomOptions = Partial<Limits> & {
   /**
-   * What a plain wheel does: "pan" (the default; a touchpad's two-finger
-   * scroll moves) or "zoom" (a mouse wheel zooms; panning is by dragging).
-   * Ctrl + wheel, and a touchpad's pinch, always zoom.
+   * What a plain wheel does. "auto" (the default): a mouse wheel zooms and
+   * a touchpad's two-finger scroll moves, as far as it can be told (see
+   * wheel-kind.ts; when unclear, it moves). "pan": every wheel moves.
+   * "zoom": every wheel zooms. Ctrl + wheel, and a touchpad's pinch,
+   * always zoom.
    */
-  wheel?: "pan" | "zoom";
+  wheel?: "auto" | "pan" | "zoom";
   /** Arrows move, + and - zoom, 0 fits, while the viewport has focus. On by default. */
   keyboard?: boolean;
   /** Called after every change of the view. */
@@ -75,7 +78,7 @@ const dragThreshold = 4;
  */
 export function attachPanZoom(viewport: HTMLElement, content: HTMLElement, options: PanZoomOptions): AttachedPanZoom {
   const limits: Limits = { minScale: options.minScale ?? 0.05, maxScale: options.maxScale ?? 4 };
-  const wheel = options.wheel ?? "pan";
+  const wheel = options.wheel ?? "auto";
   const keyboard = options.keyboard ?? true;
   let current: View = { x: 0, y: 0, scale: 1 };
   let animation = 0;
@@ -166,15 +169,31 @@ export function attachPanZoom(viewport: HTMLElement, content: HTMLElement, optio
     moveTo(zoomAt(heading ?? current, { x: now.width / 2, y: now.height / 2 }, factor, limits), true, by);
   };
 
-  // Wheel: a touchpad's two-finger scroll moves, its pinch (ctrlKey) zooms.
+  // Wheel: a touchpad's two-finger scroll moves, its pinch (ctrlKey) zooms;
+  // a mouse wheel zooms, with wheel "auto" or "zoom".
+  // With "auto", one guess per gesture, from its first event: a gesture
+  // never turns from moving into zooming halfway (a touchpad's flick goes
+  // on in small steps after the fingers are lifted). A pause of 200ms ends it.
+  let wheelGesture: { kind: "mouse" | "touchpad" | "unclear"; last: number } | null = null;
   const onWheel = (event: WheelEvent) => {
     event.preventDefault();
     stop();
     fitted = null;
+    if (wheelGesture === null || event.timeStamp - wheelGesture.last > 200) {
+      const sample = event as WheelEvent & { wheelDeltaY?: number };
+      const kind = wheelKind({ deltaX: event.deltaX, deltaY: event.deltaY, deltaMode: event.deltaMode, wheelDeltaY: sample.wheelDeltaY });
+      wheelGesture = { kind, last: event.timeStamp };
+    } else {
+      wheelGesture.last = event.timeStamp;
+    }
+    const zooms = wheel === "zoom" || (wheel === "auto" && wheelGesture.kind === "mouse");
     // Lines or pages, as some mice send: about 16 pixels a line.
     const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? viewport.clientHeight : 1;
-    if (event.ctrlKey || event.metaKey || wheel === "zoom") {
-      apply(zoomAt(current, local(event.clientX, event.clientY), Math.exp(-event.deltaY * unit * 0.01), limits), "user");
+    // A pinch comes in many small steps; a mouse notch is one of about 100
+    // pixels, which zooms about 1.22 times.
+    const rate = wheelGesture.kind === "mouse" ? 0.002 : 0.01;
+    if (event.ctrlKey || event.metaKey || zooms) {
+      apply(zoomAt(current, local(event.clientX, event.clientY), Math.exp(-event.deltaY * unit * rate), limits), "user");
     } else {
       apply({ ...current, x: current.x - event.deltaX * unit, y: current.y - event.deltaY * unit }, "user");
     }

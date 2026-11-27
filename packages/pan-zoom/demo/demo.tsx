@@ -2,6 +2,9 @@ import { useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 // The package's entry, as an app gets it: only what it exports.
 import { PanZoom, type PanZoomHandle, type ChangeCause, type View } from "#/index.ts";
+// Not exported: only for the log's line per wheel gesture, to check the
+// guess against a real mouse and touchpad.
+import { wheelKind } from "#/wheel-kind.ts";
 
 /**
  * A page to try <PanZoom> by hand, through what the package exports: a
@@ -13,7 +16,9 @@ import { PanZoom, type PanZoomHandle, type ChangeCause, type View } from "#/inde
  *   and after a move the middle stays in the middle;
  * - "Fit while hidden": fitted once it shows again;
  * - "Show 5 cards in a row": ends on the last card, not short of it;
- * - the readout says what moved the view: user, code or layout.
+ * - the readout says what moved the view: user, code or layout;
+ * - each wheel gesture logs its first event and what "auto" guessed sent
+ *   it: a mouse zooms, a touchpad (or unclear) moves.
  */
 
 const rows = 12;
@@ -28,8 +33,10 @@ function Demo() {
   const [width, setWidth] = useState(100);
   const [height, setHeight] = useState(480);
   const [wide, setWide] = useState(false);
-  const [wheel, setWheel] = useState<"pan" | "zoom">("pan");
+  const [wheel, setWheel] = useState<"auto" | "pan" | "zoom">("auto");
   const say = (line: string) => setLog((lines) => [line, ...lines]);
+  // The same gestures as <PanZoom> sees them: a pause of 200ms ends one.
+  const lastWheel = useRef(-Infinity);
 
   // For poking at it from the console, and for the tests driving the page.
   (window as unknown as { panZoom: typeof panZoom }).panZoom = panZoom;
@@ -102,7 +109,19 @@ function Demo() {
         </button>
         <label>
           Wheel
-          <select value={wheel} onChange={(event) => setWheel(event.target.value === "zoom" ? "zoom" : "pan")}>
+          <select
+            value={wheel}
+            onChange={(event) => {
+              if (event.target.value === "zoom") {
+                setWheel("zoom");
+              } else if (event.target.value === "pan") {
+                setWheel("pan");
+              } else {
+                setWheel("auto");
+              }
+            }}
+          >
+            <option value="auto">mouse zooms, touchpad pans</option>
             <option value="pan">pans</option>
             <option value="zoom">zooms</option>
           </select>
@@ -124,6 +143,15 @@ function Demo() {
         maxScale={3}
         style={{ width: `${width}%`, height: `${height}px`, display: hidden ? "none" : undefined, boxSizing: "border-box" }}
         onChange={(next, by) => setView({ view: next, by })}
+        onWheel={(event) => {
+          const native = event.nativeEvent as WheelEvent & { wheelDeltaY?: number };
+          const startsGesture = native.timeStamp - lastWheel.current > 200;
+          lastWheel.current = native.timeStamp;
+          if (!startsGesture) return;
+          const sample = { deltaX: native.deltaX, deltaY: native.deltaY, deltaMode: native.deltaMode, wheelDeltaY: native.wheelDeltaY };
+          const modifier = native.ctrlKey || native.metaKey ? " (ctrl: pinch or ctrl + wheel, zooms)" : "";
+          say(`wheel: deltaX ${sample.deltaX}, deltaY ${sample.deltaY}, deltaMode ${sample.deltaMode}, wheelDeltaY ${sample.wheelDeltaY ?? "none"} → ${wheelKind(sample)}${modifier}`);
+        }}
         onClick={(event) => {
           // A card's link: logged instead of followed, so the page stays put.
           const card = event.target instanceof Element ? event.target.closest("a.card") : null;

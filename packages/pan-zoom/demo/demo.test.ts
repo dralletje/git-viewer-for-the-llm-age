@@ -180,6 +180,33 @@ describe("<PanZoom> in every browser", { concurrency: true }, () => {
         assert.ok(Math.abs(underAfter.x - under.x) < 0.5 && Math.abs(underAfter.y - under.y) < 0.5, `${JSON.stringify(under)} moved to ${JSON.stringify(underAfter)}`);
       });
 
+      test("a plain wheel step like a mouse notch zooms around the pointer", async () => {
+        const box = await page.locator(".viewport").boundingBox();
+        assert.ok(box !== null);
+        const pointer = { x: box.x + 400, y: box.y + 200 };
+        await page.mouse.move(pointer.x, pointer.y);
+        // A new gesture: the guess is made again after a pause.
+        await page.waitForTimeout(250);
+        const start = await view();
+        const under = await drawingPointAt(pointer.x, pointer.y);
+        // A notch as Firefox reports it: 3 lines. Playwright's own wheel is a
+        // notch only in Chromium; in Firefox and WebKit it's pixel-precise,
+        // like a touchpad (see wheel-kind.toml).
+        await page.evaluate(
+          ({ x, y }) => {
+            const viewport = document.querySelector(".viewport") as HTMLElement;
+            viewport.dispatchEvent(new WheelEvent("wheel", { deltaY: -3, deltaMode: 1, clientX: x, clientY: y, bubbles: true, cancelable: true }));
+          },
+          pointer,
+        );
+        await viewChanged(start);
+        const zoomed = await view();
+        assert.ok(zoomed.scale > start.scale, `${JSON.stringify(start)} to ${JSON.stringify(zoomed)}`);
+        const underAfter = await drawingPointAt(pointer.x, pointer.y);
+        assert.ok(Math.abs(underAfter.x - under.x) < 0.5 && Math.abs(underAfter.y - under.y) < 0.5, `${JSON.stringify(under)} moved to ${JSON.stringify(underAfter)}`);
+        assert.match(await logText(), /→ mouse/);
+      });
+
       test("a link focused out of sight is moved into it, and zooming still turns around the pointer", async () => {
         await page.evaluate(() => (window as unknown as { panZoom: { current: { setView(view: View): void } } }).panZoom.current.setView({ x: 0, y: 0, scale: 1 }));
         // As Tab does: the browser scrolls the viewport to show it.

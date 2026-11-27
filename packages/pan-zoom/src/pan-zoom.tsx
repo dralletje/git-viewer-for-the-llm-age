@@ -33,11 +33,14 @@ export type PanZoomProps = Omit<ComponentProps<"div">, "children" | "onChange" |
   /** The view at first: "fit" (the default) shows the whole content, not larger than drawn. */
   initialView?: View | "fit";
   /**
-   * What a plain wheel does: "pan" (the default; a touchpad's two-finger
-   * scroll moves) or "zoom" (a mouse wheel zooms). Ctrl + wheel and a
-   * touchpad's pinch always zoom.
+   * What a plain wheel does. "auto" (the default): a mouse wheel zooms, a
+   * touchpad's two-finger scroll moves. Browsers don't say which is which,
+   * so it's a guess per gesture; a smooth-scrolling mouse (and a Magic
+   * Mouse) can't be told from a touchpad, and moves. "pan": every wheel
+   * moves. "zoom": every wheel zooms. Ctrl + wheel and a touchpad's pinch
+   * always zoom.
    */
-  wheel?: "pan" | "zoom";
+  wheel?: "auto" | "pan" | "zoom";
   /** Arrows move, + and - zoom, 0 fits, while it has focus. On by default (it takes tab focus). */
   keyboard?: boolean;
   /** After every change of the view, with what moved it. */
@@ -55,7 +58,7 @@ export type PanZoomProps = Omit<ComponentProps<"div">, "children" | "onChange" |
  * `style={{ touchAction: "pan-y" }}`: then vertical swipes scroll the page,
  * and sideways drags and pinches stay with it.
  */
-export function PanZoom({ children, ref, minScale, maxScale, initialView = "fit", wheel = "pan", keyboard = true, onChange, style, tabIndex, ...rest }: PanZoomProps) {
+export function PanZoom({ children, ref, minScale, maxScale, initialView = "fit", wheel = "auto", keyboard = true, onChange, style, tabIndex, ...rest }: PanZoomProps) {
   const viewport = useRef<HTMLDivElement>(null);
   const content = useRef<HTMLDivElement>(null);
   const attached = useRef<AttachedPanZoom | null>(null);
