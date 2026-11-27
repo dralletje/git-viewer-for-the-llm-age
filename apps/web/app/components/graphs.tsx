@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Canvas, type CanvasHandle } from "@dral/canvas-component";
+import { PanZoom, type PanZoomHandle } from "@dral/pan-zoom";
 import { useFetcher } from "react-router";
 import type { ChangeView } from "#/components/changes.tsx";
 import type { ChangesGraph } from "#/graph.server.ts";
@@ -266,7 +266,7 @@ function GraphFrame({ title, legend, graph, empty, barTitle }: { title: string; 
 }
 
 /**
- * The drawing on a canvas (see @dral/canvas-component): moved by dragging,
+ * The drawing on a canvas (see @dral/pan-zoom): moved by dragging,
  * scrolling or the keys, zoomed by pinching, fitted at first. Follows the
  * code: the declaration being read below (ChangesView's "room:reading"
  * event) is marked, and moved into sight. Clicking a declaration focuses
@@ -276,7 +276,7 @@ function GraphCanvas({ layout, roundedCorners }: { layout: GraphLayout; roundedC
   // Around the canvas and its buttons, the canvas's own size; and around the drawing.
   const viewport = useRef<HTMLDivElement>(null);
   const content = useRef<HTMLDivElement>(null);
-  const canvas = useRef<CanvasHandle>(null);
+  const canvas = useRef<PanZoomHandle>(null);
 
   // Another layout: the whole graph again, never larger than drawn.
   useEffect(() => {
@@ -372,11 +372,11 @@ function GraphCanvas({ layout, roundedCorners }: { layout: GraphLayout; roundedC
 
   return (
     <div ref={viewport} className="relative h-full w-full">
-      <Canvas ref={canvas} minScale={0.05} maxScale={3} aria-label="Graph of the changes" className="h-full w-full cursor-grab select-none">
+      <PanZoom ref={canvas} minScale={0.05} maxScale={3} aria-label="Graph of the changes" className="h-full w-full cursor-grab select-none">
         <div ref={content}>
           <GraphDrawing layout={layout} roundedCorners={roundedCorners} />
         </div>
-      </Canvas>
+      </PanZoom>
       <div className="absolute bottom-2 right-2 flex gap-1 text-xs">
         <button type="button" onClick={() => canvas.current?.zoomBy(1.25)} title="Zoom in" className={canvasButton}>
           +

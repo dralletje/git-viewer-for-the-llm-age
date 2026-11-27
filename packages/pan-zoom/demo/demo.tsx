@@ -1,10 +1,10 @@
 import { useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 // The package's entry, as an app gets it: only what it exports.
-import { Canvas, type CanvasHandle, type ChangeCause, type View } from "#/index.ts";
+import { PanZoom, type PanZoomHandle, type ChangeCause, type View } from "#/index.ts";
 
 /**
- * A page to try the canvas by hand, through what the package exports: a
+ * A page to try <PanZoom> by hand, through what the package exports: a
  * large drawing of cards (each a link), and controls for what an app does
  * with it. Every behaviour has something here to see it by:
  * - drag, wheel, ctrl + wheel / pinch, and keys (Tab to it: arrows, + - 0);
@@ -20,7 +20,7 @@ const rows = 12;
 const columns = 12;
 
 function Demo() {
-  const canvas = useRef<CanvasHandle>(null);
+  const panZoom = useRef<PanZoomHandle>(null);
   const [view, setView] = useState<{ view: View; by: ChangeCause } | null>(null);
   const [log, setLog] = useState<Array<string>>([]);
   const [shown, setShown] = useState<number | null>(null);
@@ -32,7 +32,7 @@ function Demo() {
   const say = (line: string) => setLog((lines) => [line, ...lines]);
 
   // For poking at it from the console, and for the tests driving the page.
-  (window as unknown as { canvas: typeof canvas }).canvas = canvas;
+  (window as unknown as { panZoom: typeof panZoom }).panZoom = panZoom;
 
   const cards: Array<{ number: number; x: number; y: number }> = [];
   for (let row = 0; row < rows; row++) {
@@ -44,19 +44,19 @@ function Demo() {
     const card = cards[number - 1];
     if (card === undefined) return;
     setShown(number);
-    canvas.current?.show({ x: card.x, y: card.y, width: 160, height: 90 }, { animate: true, margin: 40 });
+    panZoom.current?.show({ x: card.x, y: card.y, width: 160, height: 90 }, { animate: true, margin: 40 });
   };
 
   return (
     <>
       <div className="controls">
-        <button type="button" onClick={() => canvas.current?.fit({ animate: true })}>
+        <button type="button" onClick={() => panZoom.current?.fit({ animate: true })}>
           Fit
         </button>
-        <button type="button" onClick={() => canvas.current?.zoomBy(1.25)}>
+        <button type="button" onClick={() => panZoom.current?.zoomBy(1.25)}>
           +
         </button>
-        <button type="button" onClick={() => canvas.current?.zoomBy(0.8)}>
+        <button type="button" onClick={() => panZoom.current?.zoomBy(0.8)}>
           −
         </button>
         <button
@@ -89,8 +89,8 @@ function Demo() {
           onClick={() => {
             setHidden(true);
             // Zoomed in first, so the fit that follows is plain to see.
-            canvas.current?.setView({ x: -300, y: -300, scale: 2 });
-            canvas.current?.fit();
+            panZoom.current?.setView({ x: -300, y: -300, scale: 2 });
+            panZoom.current?.fit();
             say("fitted while hidden; showing again in 500ms");
             setTimeout(() => setHidden(false), 500);
           }}
@@ -115,8 +115,8 @@ function Demo() {
           px
         </label>
       </div>
-      <Canvas
-        ref={canvas}
+      <PanZoom
+        ref={panZoom}
         className="viewport"
         aria-label="Cards"
         wheel={wheel}
@@ -139,7 +139,7 @@ function Demo() {
             </a>
           ))}
         </div>
-      </Canvas>
+      </PanZoom>
       <div className="readouts">
         <div>
           View:{" "}

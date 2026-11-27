@@ -9,7 +9,7 @@ import { chromium, firefox, webkit, type Browser, type Page } from "playwright";
 import { createServer, type ViteDevServer } from "vite";
 
 /**
- * The basics of <Canvas> in real browsers, on the demo page: what the view
+ * The basics of <PanZoom> in real browsers, on the demo page: what the view
  * math tests can't see. Chromium runs here; Firefox and WebKit run in
  * Playwright's own Docker image (their system libraries aren't on every
  * machine), reached through a Playwright server in it. The three run at
@@ -23,7 +23,7 @@ const image = "mcr.microsoft.com/playwright:v1.65.1-noble";
 let server: ViteDevServer;
 let url: string;
 let container: ChildProcess | null = null;
-const containerName = `canvas-component-test-${process.pid}`;
+const containerName = `pan-zoom-test-${process.pid}`;
 let containerEndpoint: Promise<string>;
 
 before(async () => {
@@ -64,7 +64,7 @@ const browsers: Array<{ name: string; open: () => Promise<Browser> }> = [
   { name: "webkit", open: async () => webkit.connect(await containerEndpoint, { exposeNetwork: "<loopback>" }) },
 ];
 
-describe("<Canvas> in every browser", { concurrency: true }, () => {
+describe("<PanZoom> in every browser", { concurrency: true }, () => {
   for (const { name, open } of browsers) {
     // The browsers side by side, but one page's tests one after another: they share it.
     describe(name, { concurrency: 1 }, () => {
@@ -83,10 +83,10 @@ describe("<Canvas> in every browser", { concurrency: true }, () => {
         await browser?.close();
       });
 
-      const view = () => page.evaluate(() => (window as unknown as { canvas: { current: { view(): View } } }).canvas.current.view());
+      const view = () => page.evaluate(() => (window as unknown as { panZoom: { current: { view(): View } } }).panZoom.current.view());
       const viewChanged = (from: View) =>
         page.waitForFunction((before) => {
-          const now = (window as unknown as { canvas: { current: { view(): View } } }).canvas.current.view();
+          const now = (window as unknown as { panZoom: { current: { view(): View } } }).panZoom.current.view();
           return now.x !== before.x || now.y !== before.y || now.scale !== before.scale;
         }, from, { timeout: 2000 });
       const sizes = () =>
@@ -168,7 +168,7 @@ describe("<Canvas> in every browser", { concurrency: true }, () => {
         assert.equal(moved.scale, start.scale);
 
         const under = await drawingPointAt(pointer.x, pointer.y);
-        const handleSays = await page.evaluate(({ x, y }) => (window as unknown as { canvas: { current: { toContent(x: number, y: number): { x: number; y: number } } } }).canvas.current.toContent(x, y), pointer);
+        const handleSays = await page.evaluate(({ x, y }) => (window as unknown as { panZoom: { current: { toContent(x: number, y: number): { x: number; y: number } } } }).panZoom.current.toContent(x, y), pointer);
         assert.ok(Math.abs(handleSays.x - under.x) < 0.5 && Math.abs(handleSays.y - under.y) < 0.5, `toContent says ${JSON.stringify(handleSays)}, the page ${JSON.stringify(under)}`);
         await page.keyboard.down("Control");
         await page.mouse.wheel(0, -50);
@@ -181,13 +181,13 @@ describe("<Canvas> in every browser", { concurrency: true }, () => {
       });
 
       test("a link focused out of sight is moved into it, and zooming still turns around the pointer", async () => {
-        await page.evaluate(() => (window as unknown as { canvas: { current: { setView(view: View): void } } }).canvas.current.setView({ x: 0, y: 0, scale: 1 }));
+        await page.evaluate(() => (window as unknown as { panZoom: { current: { setView(view: View): void } } }).panZoom.current.setView({ x: 0, y: 0, scale: 1 }));
         // As Tab does: the browser scrolls the viewport to show it.
         await page.locator(".card", { hasText: /^Card 140$/ }).focus();
         await page.waitForFunction(
           () => {
             const viewport = document.querySelector(".viewport") as HTMLElement;
-            return viewport.scrollLeft === 0 && viewport.scrollTop === 0 && (window as unknown as { canvas: { current: { view(): View } } }).canvas.current.view().x !== 0;
+            return viewport.scrollLeft === 0 && viewport.scrollTop === 0 && (window as unknown as { panZoom: { current: { view(): View } } }).panZoom.current.view().x !== 0;
           },
           undefined,
           { timeout: 2000 },
@@ -218,7 +218,7 @@ describe("<Canvas> in every browser", { concurrency: true }, () => {
         assertNear(await view(), { ...start, x: start.x - 40, y: start.y - 40 });
         const moved = await view();
         await page.keyboard.press("+");
-        await page.waitForFunction((scale) => Math.abs((window as unknown as { canvas: { current: { view(): View } } }).canvas.current.view().scale - scale) < 0.0001, Math.min(3, moved.scale * 1.25));
+        await page.waitForFunction((scale) => Math.abs((window as unknown as { panZoom: { current: { view(): View } } }).panZoom.current.view().scale - scale) < 0.0001, Math.min(3, moved.scale * 1.25));
         await page.keyboard.press("0");
         await page.waitForTimeout(250);
         await assertFitted();

@@ -7,7 +7,7 @@ import { fitView, resizedView, viewShowing, zoomAt, type Limits, type Rect, type
  */
 export type ChangeCause = "user" | "code" | "layout";
 
-export type CanvasOptions = Partial<Limits> & {
+export type PanZoomOptions = Partial<Limits> & {
   /**
    * What a plain wheel does: "pan" (the default; a touchpad's two-finger
    * scroll moves) or "zoom" (a mouse wheel zooms; panning is by dragging).
@@ -28,7 +28,7 @@ export type FitOptions = {
   animate?: boolean;
 };
 
-export type AttachedCanvas = {
+export type AttachedPanZoom = {
   view(): View;
   /** Moves the view there; `animate` eases it over a short moment. */
   setView(view: View, options?: { animate?: boolean }): void;
@@ -53,7 +53,7 @@ export type AttachedCanvas = {
 const dragThreshold = 4;
 
 /**
- * Makes `viewport` a canvas over `content`: the content is moved and scaled
+ * Makes `viewport` pan and zoom over `content`: the content is moved and scaled
  * by a CSS transform, and the viewport (which clips it) takes:
  * - a drag with the mouse or one finger: moves it;
  * - two-finger scrolling on a touchpad, or a mouse wheel: moves it (or
@@ -73,7 +73,7 @@ const dragThreshold = 4;
  * left (position: absolute; left: 0; top: 0). Its own `touch-action` and
  * `overflow` are kept when set; otherwise they become "none" and "hidden".
  */
-export function attachCanvas(viewport: HTMLElement, content: HTMLElement, options: CanvasOptions): AttachedCanvas {
+export function attachPanZoom(viewport: HTMLElement, content: HTMLElement, options: PanZoomOptions): AttachedPanZoom {
   const limits: Limits = { minScale: options.minScale ?? 0.05, maxScale: options.maxScale ?? 4 };
   const wheel = options.wheel ?? "pan";
   const keyboard = options.keyboard ?? true;

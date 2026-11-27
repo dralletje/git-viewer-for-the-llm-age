@@ -1,9 +1,9 @@
 import { useImperativeHandle, useLayoutEffect, useRef, type ComponentProps, type ReactNode, type Ref } from "react";
-import { attachCanvas, type AttachedCanvas, type ChangeCause, type FitOptions } from "#/canvas.ts";
+import { attachPanZoom, type AttachedPanZoom, type ChangeCause, type FitOptions } from "#/attach-pan-zoom.ts";
 import type { Rect, View } from "#/view.ts";
 
-/** What a ref on <Canvas> gets: to move the view from code. */
-export type CanvasHandle = {
+/** What a ref on <PanZoom> gets: to move the view from code. */
+export type PanZoomHandle = {
   view(): View;
   /** Moves the view there; `animate` eases it over a short moment. */
   setView(view: View, options?: { animate?: boolean }): void;
@@ -22,10 +22,10 @@ export type CanvasHandle = {
   toClient(point: { x: number; y: number }): { x: number; y: number };
 };
 
-export type CanvasProps = Omit<ComponentProps<"div">, "children" | "onChange" | "ref"> & {
+export type PanZoomProps = Omit<ComponentProps<"div">, "children" | "onChange" | "ref"> & {
   /** What's moved and zoomed. Its own size is what fitting fits. */
   children: ReactNode;
-  ref?: Ref<CanvasHandle>;
+  ref?: Ref<PanZoomHandle>;
   /** How far it zooms out: 0.05 by default. */
   minScale?: number;
   /** How far it zooms in: 4 by default. */
@@ -53,12 +53,12 @@ export type CanvasProps = Omit<ComponentProps<"div">, "children" | "onChange" | 
  * Touch: by default the viewport takes every touch (`touch-action: none`).
  * To let a finger scroll the page past it, set it in `style`, e.g.
  * `style={{ touchAction: "pan-y" }}`: then vertical swipes scroll the page,
- * and sideways drags and pinches stay with the canvas.
+ * and sideways drags and pinches stay with it.
  */
-export function Canvas({ children, ref, minScale, maxScale, initialView = "fit", wheel = "pan", keyboard = true, onChange, style, tabIndex, ...rest }: CanvasProps) {
+export function PanZoom({ children, ref, minScale, maxScale, initialView = "fit", wheel = "pan", keyboard = true, onChange, style, tabIndex, ...rest }: PanZoomProps) {
   const viewport = useRef<HTMLDivElement>(null);
   const content = useRef<HTMLDivElement>(null);
-  const attached = useRef<AttachedCanvas | null>(null);
+  const attached = useRef<AttachedPanZoom | null>(null);
   // The view so far: options changing attach it anew, in the same place.
   const lastView = useRef<View | null>(null);
   // The newest onChange, without attaching anew when it's another function.
@@ -73,7 +73,7 @@ export function Canvas({ children, ref, minScale, maxScale, initialView = "fit",
     if (frame === null || drawing === null) return;
     // Read before attaching: attaching reports its own first view.
     const previous = lastView.current;
-    const canvas = attachCanvas(frame, drawing, {
+    const panZoom = attachPanZoom(frame, drawing, {
       minScale,
       maxScale,
       wheel,
@@ -84,15 +84,15 @@ export function Canvas({ children, ref, minScale, maxScale, initialView = "fit",
       },
     });
     if (previous !== null) {
-      canvas.setView(previous);
+      panZoom.setView(previous);
     } else if (initialView === "fit") {
-      canvas.fit();
+      panZoom.fit();
     } else {
-      canvas.setView(initialView);
+      panZoom.setView(initialView);
     }
-    attached.current = canvas;
+    attached.current = panZoom;
     return () => {
-      canvas.destroy();
+      panZoom.destroy();
       attached.current = null;
     };
     // initialView is only the first view: changing it later moves nothing.

@@ -1,5 +1,5 @@
 {
-  "name": "@dral/canvas-component",
+  "name": "@dral/pan-zoom",
   "private": true,
   "type": "module",
   "exports": {
